@@ -2,7 +2,7 @@ import { CardKicker } from "../ui";
 import type { MessageTypeKind, MessageTypeSummaryStats } from "../../lib/types";
 import { MESSAGE_TYPE_LABELS } from "../../lib/messageTypeLabels";
 import { formatDuration } from "../../lib/formatDuration";
-import { formatTypeBucketLabel } from "../../lib/formatTypeBucketLabel";
+import { formatRateBucketLabel } from "../../lib/formatRateBucketLabel";
 import styles from "./MessageTypeSummary.module.css";
 
 interface MessageTypeSummaryProps {
@@ -43,7 +43,7 @@ export function MessageTypeSummary({ kind, totalCount, pctOfAll, summary }: Mess
               label="Пик"
               value={
                 summary.peak
-                  ? formatTypeBucketLabel(summary.peak.bucket, summary.rate_granularity)
+                  ? formatRateBucketLabel(summary.peak.bucket, summary.rate_granularity)
                   : "— мало данных"
               }
               muted={!summary.peak}

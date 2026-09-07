@@ -1,6 +1,6 @@
 import type { MessageTypeKind } from "./types";
 
-// 12 типов — фиксированный словарь Telegram-экспорта, не пользовательские
+// 13 типов — фиксированный словарь Telegram-экспорта, не пользовательские
 // данные, поэтому формы для каждого прописаны явно (докстрока в
 // MessageTypeKind, message_types.rs).
 interface MessageTypeLabel {
@@ -11,6 +11,7 @@ interface MessageTypeLabel {
 }
 
 export const MESSAGE_TYPE_LABELS: Record<MessageTypeKind, MessageTypeLabel> = {
+  text: { plural: "Текстовые", genitive: "текстовых" },
   photo: { plural: "Фото", genitive: "фото" },
   sticker: { plural: "Стикеры", genitive: "стикеров" },
   voice_message: { plural: "Голосовые", genitive: "голосовых" },

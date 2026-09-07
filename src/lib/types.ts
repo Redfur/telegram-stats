@@ -48,9 +48,12 @@ export interface TopParticipants {
   participants: ParticipantStat[];
 }
 
-// Зеркалит src-tauri/src/metrics/message_types.rs. 12 типов на этот срез,
+// Зеркалит src-tauri/src/metrics/message_types.rs. 13 типов на этот срез,
 // без реакций (см. docs/PLAN.md — своя таблица, отдельный будущий срез).
+// "text" не эксклюзивен с медиа-типами — фото с подписью считается и в
+// "photo", и в "text".
 export type MessageTypeKind =
+  | "text"
   | "photo"
   | "sticker"
   | "voice_message"
@@ -76,19 +79,27 @@ export interface MessageTypeOverview {
   counts: MessageTypeCount[];
 }
 
-// Month/day — абсолютные календарные бакеты (временной ряд), hour_of_day —
-// агрегат по часу суток (0-23), не временной ряд.
-export type TypeTimeView = "month" | "day" | "hour_of_day";
+// Гранулярность гистограммы блока. month — абсолютный календарный бакет
+// (временной ряд). day_of_week/hour_of_day — распределения по всему
+// периоду сразу ("в какой день недели"/"в какое время суток" обычно
+// присылают), не временные ряды — bucket для day_of_week это "0".."6"
+// (0 = понедельник), для hour_of_day — "0".."23".
+export type TypeTimeView = "month" | "day_of_week" | "hour_of_day";
 
 export interface TypeBucket {
   bucket: string;
   count: number;
 }
 
+// Гранулярность "темпа"/"пика" в карточке сводки — не то же самое, что
+// TypeTimeView (что сейчас выбрано для гистограммы): это всегда
+// календарный временной ряд, не зависит от того, что показывает график.
+export type RateGranularity = "month" | "day";
+
 export type MessageTypeSummaryStats =
   | {
       kind: "frequency";
-      rate_granularity: TypeTimeView;
+      rate_granularity: RateGranularity;
       rate_value: number;
       peak: TypeBucket | null;
       top_sender: string | null;

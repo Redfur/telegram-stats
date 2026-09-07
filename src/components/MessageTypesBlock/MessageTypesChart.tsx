@@ -13,7 +13,7 @@ interface MessageTypesChartProps {
 
 const VIEW_OPTIONS: { value: TypeTimeView; label: string }[] = [
   { value: "month", label: "По месяцам" },
-  { value: "day", label: "По дням" },
+  { value: "day_of_week", label: "По дням" },
   { value: "hour_of_day", label: "По часам" },
 ];
 
