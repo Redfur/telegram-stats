@@ -12,6 +12,7 @@ export interface ChatSummary {
   first_msg_ts: number | null;
   last_msg_ts: number | null;
   imported_at: number;
+  source_file_size: number | null;
 }
 
 export interface ChatTotals {

@@ -1,0 +1,59 @@
+.card {
+  gap: var(--sp-5);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-4);
+}
+
+.updated {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.title {
+  font: 600 21px/1.15 var(--font-head), sans-serif;
+  color: var(--text);
+}
+
+.period {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.stats {
+  display: flex;
+  border-top: var(--border-w) solid var(--border-soft);
+  padding-top: var(--sp-4);
+}
+
+.stat {
+  flex: 1;
+}
+
+.stat + .stat {
+  border-left: var(--border-w) solid var(--border-soft);
+  padding-left: var(--sp-5);
+}
+
+.statLabel {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.statValue {
+  font: 600 24px/1.1 var(--font-head), sans-serif;
+}
+
+.actions {
+  display: flex;
+  gap: var(--sp-4);
+  margin-top: 2px;
+}
+
+.deleteBtn {
+  margin-left: auto;
+}

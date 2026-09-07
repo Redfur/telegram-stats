@@ -2,10 +2,12 @@ import { useCallback, useState, type ReactNode } from "react";
 import { AppShell } from "./components/AppShell/AppShell";
 import { AppRail, type NavTarget } from "./components/AppRail/AppRail";
 import { LibraryEmptyState } from "./screens/Library/LibraryEmptyState";
+import { Library } from "./screens/Library/Library";
 import { ComingSoon } from "./screens/ComingSoon/ComingSoon";
 import { Dashboard } from "./screens/Dashboard/Dashboard";
 import { useChats } from "./hooks/useChats";
 import { useImportChat } from "./hooks/useImportChat";
+import { useDeleteChat } from "./hooks/useDeleteChat";
 
 const STUB_TITLES: Record<Exclude<NavTarget, "library">, string> = {
   people: "Участники",
@@ -26,6 +28,7 @@ function App() {
     [refresh],
   );
   const { importFile, isImporting, error } = useImportChat({ onImported: handleImported });
+  const { deleteChat } = useDeleteChat();
 
   function handleNavigate(target: NavTarget) {
     setOpenChatId(null);
@@ -36,13 +39,26 @@ function App() {
     setOpenChatId(id);
   }
 
+  async function handleDeleteChat(id: number) {
+    await deleteChat(id);
+    await refresh();
+    setOpenChatId((current) => (current === id ? null : current));
+  }
+
   let mainContent: ReactNode;
   if (openChatId != null) {
     mainContent = <Dashboard chatId={openChatId} />;
   } else if (activeNav === "library") {
     mainContent =
       chats.length > 0 ? (
-        <ComingSoon title="Библиотека" message={`${chats.length} чат(ов) — откройте один из рельса`} />
+        <Library
+          chats={chats}
+          onImport={importFile}
+          isImporting={isImporting}
+          error={error}
+          onSelectChat={handleSelectChat}
+          onDelete={handleDeleteChat}
+        />
       ) : (
         <LibraryEmptyState onPickFile={importFile} isImporting={isImporting} error={error} />
       );
