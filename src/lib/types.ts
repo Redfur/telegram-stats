@@ -48,6 +48,81 @@ export interface TopParticipants {
   participants: ParticipantStat[];
 }
 
+// Зеркалит src-tauri/src/metrics/message_types.rs. 12 типов на этот срез,
+// без реакций (см. docs/PLAN.md — своя таблица, отдельный будущий срез).
+export type MessageTypeKind =
+  | "photo"
+  | "sticker"
+  | "voice_message"
+  | "video_message"
+  | "video_file"
+  | "animation"
+  | "file"
+  | "forwarded"
+  | "edited"
+  | "poll"
+  | "location"
+  | "contact";
+
+export interface MessageTypeCount {
+  kind: MessageTypeKind;
+  count: number;
+}
+
+export interface MessageTypeOverview {
+  /** `false` — чат импортирован до появления этой метрики, нужен переимпорт. */
+  available: boolean;
+  total_messages: number;
+  counts: MessageTypeCount[];
+}
+
+// Month/day — абсолютные календарные бакеты (временной ряд), hour_of_day —
+// агрегат по часу суток (0-23), не временной ряд.
+export type TypeTimeView = "month" | "day" | "hour_of_day";
+
+export interface TypeBucket {
+  bucket: string;
+  count: number;
+}
+
+export type MessageTypeSummaryStats =
+  | {
+      kind: "frequency";
+      rate_granularity: TypeTimeView;
+      rate_value: number;
+      peak: TypeBucket | null;
+      top_sender: string | null;
+    }
+  | {
+      kind: "duration";
+      total_seconds: number;
+      median_seconds: number;
+      max_seconds: number;
+    };
+
+export type MessageTypeParticipantExtra =
+  | { kind: "per_thousand"; value: number }
+  | { kind: "total_minutes"; value: number };
+
+export interface MessageTypeParticipantStat {
+  person_id: number;
+  display_name: string | null;
+  count: number;
+  share_of_own_pct: number;
+  extra: MessageTypeParticipantExtra;
+}
+
+export interface MessageTypeDetail {
+  kind: MessageTypeKind;
+  total_count: number;
+  pct_of_all: number;
+  summary: MessageTypeSummaryStats;
+  views_available: TypeTimeView[];
+  selected_view: TypeTimeView;
+  buckets: TypeBucket[];
+  participants: MessageTypeParticipantStat[];
+}
+
 export interface PersonRow {
   id: number;
   display_name: string | null;

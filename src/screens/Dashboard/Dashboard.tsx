@@ -4,17 +4,20 @@ import { Card } from "../../components/ui";
 import { StatTile } from "../../components/StatTile/StatTile";
 import { ActivityChart } from "../../components/ActivityChart/ActivityChart";
 import { ParticipantsTable } from "../../components/ParticipantsTable/ParticipantsTable";
+import { MessageTypesBlock } from "../../components/MessageTypesBlock/MessageTypesBlock";
 import type { ActivitySeries, ChatTotals, TopParticipants } from "../../lib/types";
 import styles from "./Dashboard.module.css";
 
 interface DashboardProps {
   chatId: number;
+  onReimport: () => void;
 }
 
-// Разделы 00/01/02 макета «Дашборд» (вариант 2a) — минимальный набор
-// метрик из MVP-среза, остальные секции макета (03 хронология слов,
-// 04 рекорды) — следующий инкремент (docs/PLAN.md).
-export function Dashboard({ chatId }: DashboardProps) {
+// Разделы 00/01/02/03 макета «Дашборд» (вариант 2a: 00 сводка, 01
+// активность, 02 кто писал) + ход t6 (03 типы сообщений) — остальные
+// секции макета (хронология слов, рекорды) — следующий инкремент
+// (docs/PLAN.md).
+export function Dashboard({ chatId, onReimport }: DashboardProps) {
   const [totals, setTotals] = useState<ChatTotals | null>(null);
   const [activity, setActivity] = useState<ActivitySeries | null>(null);
   const [participants, setParticipants] = useState<TopParticipants | null>(null);
@@ -93,6 +96,14 @@ export function Dashboard({ chatId }: DashboardProps) {
           ) : (
             <ParticipantsTable participants={participants.participants} />
           ))}
+      </section>
+
+      <section>
+        <div className={styles.sectionHead}>
+          <span className="kick">03</span>
+          <span className="sec">ТИПЫ СООБЩЕНИЙ</span>
+        </div>
+        <MessageTypesBlock chatId={chatId} onReimport={onReimport} />
       </section>
     </div>
   );

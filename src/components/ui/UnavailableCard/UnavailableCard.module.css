@@ -1,0 +1,15 @@
+.card {
+  align-items: flex-start;
+}
+
+.message {
+  margin: 0;
+  max-width: 56ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.action {
+  margin-top: var(--sp-2);
+}

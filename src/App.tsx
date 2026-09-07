@@ -76,7 +76,7 @@ function App() {
   if (activeNav === "people" && openChatId != null) {
     mainContent = <Participants chatId={openChatId} chatName={openChat?.name ?? null} />;
   } else if (openChatId != null) {
-    mainContent = <Dashboard chatId={openChatId} />;
+    mainContent = <Dashboard chatId={openChatId} onReimport={importFile} />;
   } else if (activeNav === "library") {
     mainContent =
       chats.length > 0 ? (

@@ -6,3 +6,4 @@ export { Segmented } from "./Segmented/Segmented";
 export { Tag } from "./Tag/Tag";
 export { DataTable } from "./DataTable/DataTable";
 export { ConfirmDialog } from "./ConfirmDialog/ConfirmDialog";
+export { UnavailableCard } from "./UnavailableCard/UnavailableCard";

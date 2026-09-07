@@ -1,0 +1,57 @@
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  padding-bottom: var(--sp-5);
+  border-bottom: var(--border-w) solid var(--border-soft);
+}
+
+.main {
+  flex: none;
+  padding-right: var(--sp-6);
+}
+
+.number {
+  font: 600 44px/0.92 var(--font-head);
+  font-variant-numeric: tabular-nums;
+  margin-top: var(--sp-2);
+}
+
+.pct {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: var(--sp-2);
+}
+
+.grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-left: var(--border-w) solid var(--border-soft);
+}
+
+.cell {
+  padding: 0 var(--sp-5);
+}
+
+.cell + .cell {
+  border-left: var(--border-w) solid var(--border-soft);
+}
+
+.cellLabel {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.cellValue {
+  font: 600 22px/1.1 var(--font-head);
+  font-variant-numeric: tabular-nums;
+  margin-top: var(--sp-2);
+}
+
+.cellValue.muted {
+  font-size: 14px;
+  color: var(--text-muted);
+}
