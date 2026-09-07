@@ -28,11 +28,21 @@
   парсинг, экран прогресса из макета 3c) — Фаза 1
 
 ## Фаза 1 — Импорт
-1. 🔲 Фикстуры `tests/fixtures/`: трёхдневный чат, переписка на двоих,
-   группа на 50, чат без реакций, англоязычный чат — до первой строчки
-   парсера
-2. 🔲 Стриминговый парсер: кастомный `Deserialize` под
-   `text: строка|массив`, `chats`/`messages`, все случаи из SPEC §8
+1. ✅ Фикстуры `tests/fixtures/`: трёхдневный чат, переписка на двоих,
+   группа на 50 (с deleted account, ботом, сервисными событиями, poll,
+   location_information), чат без реакций, англоязычный чат. Форма — по
+   разведке реального экспорта пользователя (только структура полей,
+   никакого реального контента)
+2. ✅ Стриминговый парсер `src-tauri/src/import/`: `parse_export()` читает
+   `result.json` через `serde_json::Deserializer::from_reader` и кастомный
+   `Visitor`/`DeserializeSeed` по полю `messages`, вызывает колбэк на
+   каждое событие, не собирая `Vec` внутри себя. `text`/`text_entities`,
+   `from_id`-идентичность, отсутствующие/числа-или-строки поля — по
+   SPEC §8. Несмоделированные поля (poll, rich_message,
+   inline_bot_buttons, contact_information, todo_list, game_*) уходят в
+   `extra` через `#[serde(flatten)]`, не роняя парсер. 13 тестов
+   (`cargo test`), `cargo clippy` чист. SQLite/Tauri-команда/UI — ещё нет,
+   `parse_export()` пока ничем не вызывается кроме тестов
 3. 🔲 SQLite: миграция `0001` (`chats`, `people`, `aliases`, `messages`),
    батчи по 5000, WAL, индексы после заливки, `spawn_blocking`, событие
    `ingest://progress`, отмена без мусора в базе
