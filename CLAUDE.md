@@ -92,15 +92,20 @@ Oswald/Manrope (и там, и в коде) — у Барлоу нет кирил
 рабочий путь импорт → SQLite → дашборд, но в урезанном объёме каждой
 затронутой фазы — сперва весь путь целиком, остальные метрики и экраны
 добираются инкрементально. `src-tauri/src/db/` — схема (`chats`/`people`/
-`messages`/`aliases`, миграции `0001`–`0003` через ручной
+`messages`/`aliases`, миграции `0001`–`0004` через ручной
 `PRAGMA user_version`, без `reactions`/`links`/`tokens` и без строк для
 сервисных событий — ни одна метрика их пока не читает; `0002` добавляет
 `chats.source_file_size` для честного агрегата в шапке Библиотеки,
 `0003` — `people.merged_into`/`is_hidden` и таблицу `aliases` для шага
-разбора участников), Tauri-команды (`import_chat`, `cancel_import`,
-`list_chats`, `delete_chat`, `get_people`, `merge_people`, `hide_person`,
+разбора участников, `0004` — `messages.media_type`/`has_photo`/`has_file`/
+`has_poll`/`has_location`/`has_contact`/`forwarded_from`/`edited_ts`/
+`duration_seconds` и `chats.message_types_ready` для блока «Типы
+сообщений»), Tauri-команды (`import_chat`, `cancel_import`, `list_chats`,
+`delete_chat`, `get_people`, `merge_people`, `hide_person`,
 `rename_person`, `get_chat_totals`, `get_activity_series`,
-`get_top_participants`), диалог выбора файла (`@tauri-apps/plugin-dialog`).
+`get_top_participants`, `get_message_type_overview`,
+`get_message_type_detail`), диалог выбора файла
+(`@tauri-apps/plugin-dialog`).
 `delete_chat` полагается на `ON DELETE CASCADE` — удаляет строку `chats`,
 `messages`/`people`/`aliases` уходят сами. Импорт шлёт `ingest://progress`
 (байты прочитанного файла против `source_file_size`, throttled ~150 мс,
@@ -117,7 +122,17 @@ Oswald/Manrope (и там, и в коде) — у Барлоу нет кирил
 time-series метрикой. `participant_count` в `get_chat_totals`/
 `get_top_participants`/`list_chats` считается вживую по `people`, а не из
 денормализованного снимка на момент импорта — иначе merge/hide не
-отражались бы в метриках. 29 Rust-тестов зелёные, `cargo clippy` чист.
+отражались бы в метриках. `src-tauri/src/metrics/message_types.rs` —
+универсальный блок «Типы сообщений» (секция 03 дашборда, ход `t6` макета
+«Дашборд», `docs/SPEC.md` §9 «Типы сообщений»): 12 типов, свой
+трёхуровневый выбор гранулярности (месяц/день/
+час суток — час суток тут агрегат по часу, а не временной ряд, поэтому
+намеренно не переиспользует `Granularity`), две раскладки сводки
+(частота/длительность). `chats.message_types_ready` отличает чат,
+прошедший через актуальный импортер, от чата, который ждёт переимпорта
+— фронт (`MessageTypesBlock`) в последнем случае показывает
+`UnavailableCard` вместо лживых нулей. 37 Rust-тестов зелёные, `cargo
+clippy` чист.
 ETA в прогрессе импорта, параллельные импорты, явный выбор при конфликте
 `tg_chat_id` без `id` в старом экспорте, авто-детект дублей/ботов в шаге
 разбора участников и остальные метрики из SPEC §9 — сознательно не в
