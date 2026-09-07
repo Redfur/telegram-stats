@@ -1,9 +1,10 @@
 use std::fs::File;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 
 use rusqlite::Connection;
-use telegram_stats_lib::db::{self, import_into_db};
-use telegram_stats_lib::import::{parse_export, ParsedEvent};
+use telegram_stats_lib::db::{self, import_into_db, ImportContext};
+use telegram_stats_lib::import::{parse_export, ImportError, ParsedEvent};
 use telegram_stats_lib::metrics::{get_top_participants, granularity::pick_granularity};
 
 fn fixture(name: &str) -> PathBuf {
@@ -31,7 +32,14 @@ fn import(conn: &mut Connection, name: &str) -> db::ChatSummary {
 
 fn import_with_size(conn: &mut Connection, name: &str, size: Option<i64>) -> db::ChatSummary {
     let file = File::open(fixture(name)).expect("fixture file should exist");
-    import_into_db(conn, file, name, size).expect("import should succeed")
+    let bytes_read = AtomicU64::new(0);
+    let cancel = AtomicBool::new(false);
+    let mut ctx = ImportContext {
+        bytes_read: &bytes_read,
+        on_progress: |_| {},
+        cancel: &cancel,
+    };
+    import_into_db(conn, file, name, size, &mut ctx).expect("import should succeed")
 }
 
 #[test]
@@ -165,5 +173,48 @@ fn deleting_a_chat_removes_its_messages_and_people() {
     assert_eq!(
         survivor_messages, survivor.message_count,
         "the other chat's rows must be untouched"
+    );
+}
+
+#[test]
+fn a_json_object_without_messages_is_reported_as_not_a_telegram_export() {
+    let mut conn = fresh_db();
+    let bytes_read = AtomicU64::new(0);
+    let cancel = AtomicBool::new(false);
+    let mut ctx = ImportContext {
+        bytes_read: &bytes_read,
+        on_progress: |_| {},
+        cancel: &cancel,
+    };
+
+    // валидный JSON, но не экспорт чата — нет поля `messages` вовсе
+    let not_an_export = std::io::Cursor::new(br#"{"foo": "bar", "chats": {"list": []}}"#.to_vec());
+    let result = import_into_db(&mut conn, not_an_export, "not_an_export.json", None, &mut ctx);
+
+    assert!(matches!(result, Err(ImportError::NotTelegramExport)));
+    assert!(
+        db::list_chats(&conn).unwrap().is_empty(),
+        "a rejected import must not leave a stray chat row"
+    );
+}
+
+#[test]
+fn cancelling_mid_import_leaves_no_trace() {
+    let mut conn = fresh_db();
+    let bytes_read = AtomicU64::new(0);
+    let cancel = AtomicBool::new(true); // отменено ещё до старта — проверяем самый ранний выход
+    let mut ctx = ImportContext {
+        bytes_read: &bytes_read,
+        on_progress: |_| {},
+        cancel: &cancel,
+    };
+
+    let file = File::open(fixture("three_day_chat.json")).expect("fixture file should exist");
+    let result = import_into_db(&mut conn, file, "three_day_chat.json", None, &mut ctx);
+
+    assert!(matches!(result, Err(ImportError::Cancelled)));
+    assert!(
+        db::list_chats(&conn).unwrap().is_empty(),
+        "a cancelled import must not commit a partial chat"
     );
 }

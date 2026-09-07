@@ -1,5 +1,7 @@
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{self, Read};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -19,9 +21,60 @@ fn db_err(e: rusqlite::Error) -> ImportError {
     ImportError::Sink(e.to_string())
 }
 
-/// Возвращает `person_id`, заводя строку в `people` при первом появлении
-/// `tg_person_id` в этом импорте. Кэш — единственный буфер в памяти:
-/// по числу участников, не по числу сообщений.
+/// Read-обёртка, считающая прочитанные байты в общий счётчик — честный
+/// процент прогресса по объёму файла, без второго прохода только ради
+/// подсчёта сообщений (второй проход противоречил бы цели «импорт 1M <
+/// 3 мин», SPEC §11).
+pub struct CountingReader<R> {
+    inner: R,
+    count: Arc<AtomicU64>,
+}
+
+impl<R: Read> CountingReader<R> {
+    /// Возвращает обёрнутый reader и разделяемый счётчик прочитанных байт.
+    pub fn new(inner: R) -> (Self, Arc<AtomicU64>) {
+        let count = Arc::new(AtomicU64::new(0));
+        (
+            CountingReader {
+                inner,
+                count: count.clone(),
+            },
+            count,
+        )
+    }
+}
+
+impl<R: Read> Read for CountingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.count.fetch_add(n as u64, Ordering::Relaxed);
+        Ok(n)
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ImportProgress {
+    pub bytes_read: u64,
+    pub total_bytes: Option<i64>,
+    pub message_count: i64,
+    pub people_count: i64,
+}
+
+/// Прогресс и отмена для одного вызова `import_into_db`. `on_progress`
+/// вызывается на каждое сообщение — дёшево (вызов замыкания), решение
+/// придержать/пробросить его наружу (throttling IPC) остаётся за
+/// вызывающей стороной (Tauri-командой). `cancel` проверяется тем же
+/// местом цикла — отмена не оставляет мусора: транзакция просто не
+/// коммитится (docs/SPEC.md §3).
+pub struct ImportContext<'a, F: FnMut(ImportProgress)> {
+    pub bytes_read: &'a AtomicU64,
+    pub on_progress: F,
+    pub cancel: &'a AtomicBool,
+}
+
+/// Возвращает per-person `person_id`, заводя строку в `people` при первом
+/// появлении `tg_person_id` в этом импорте. Кэш — единственный буфер в
+/// памяти: по числу участников, не по числу сообщений.
 fn resolve_person(
     tx: &rusqlite::Transaction,
     cache: &mut HashMap<String, i64>,
@@ -56,11 +109,12 @@ fn resolve_person(
 /// старая запись с тем же `tg_chat_id` — её `messages`/`people` стираются,
 /// свежие переезжают на её (стабильный) `id` через `UPDATE ... SET
 /// chat_id`, временная строка удаляется, а не наоборот.
-pub fn import_into_db(
+pub fn import_into_db<F: FnMut(ImportProgress)>(
     conn: &mut Connection,
     reader: impl Read,
     source_filename: &str,
     source_file_size: Option<i64>,
+    ctx: &mut ImportContext<'_, F>,
 ) -> Result<ChatSummary, ImportError> {
     let imported_at = now_unixtime();
     let tx = conn.transaction().map_err(db_err)?;
@@ -87,6 +141,10 @@ pub fn import_into_db(
             .map_err(db_err)?;
 
         parse_export(reader, |event| {
+            if ctx.cancel.load(Ordering::Relaxed) {
+                return Err(ImportError::Cancelled);
+            }
+
             let ParsedEvent::Message(m) = event else {
                 return Ok(()); // service/unrecognized — не персистятся в MVP
             };
@@ -123,6 +181,14 @@ pub fn import_into_db(
                 min_ts = Some(min_ts.map_or(ts, |cur| cur.min(ts)));
                 max_ts = Some(max_ts.map_or(ts, |cur| cur.max(ts)));
             }
+
+            (ctx.on_progress)(ImportProgress {
+                bytes_read: ctx.bytes_read.load(Ordering::Relaxed),
+                total_bytes: source_file_size,
+                message_count,
+                people_count: people_cache.len() as i64,
+            });
+
             Ok(())
         })?
     };

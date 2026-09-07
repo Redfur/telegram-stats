@@ -112,4 +112,12 @@ pub enum ImportError {
     /// останавливает импорт.
     #[error("import aborted by consumer: {0}")]
     Sink(String),
+    /// Корневой объект — валидный JSON, но в нём никогда не встретился
+    /// ключ `messages`: это не экспорт чата Telegram (docs/PLAN.md,
+    /// экран ошибки импорта, макет 3c).
+    #[error("root object has no `messages` field — not a Telegram chat export")]
+    NotTelegramExport,
+    /// Пользователь нажал «Отменить» во время импорта.
+    #[error("import cancelled by user")]
+    Cancelled,
 }

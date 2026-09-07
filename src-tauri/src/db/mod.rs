@@ -1,6 +1,6 @@
 mod import;
 
-pub use import::import_into_db;
+pub use import::{import_into_db, CountingReader, ImportContext, ImportProgress};
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};

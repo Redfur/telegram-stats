@@ -252,6 +252,7 @@ where
         let mut chat_type: Option<String> = None;
         let mut tg_chat_id: Option<i64> = None;
         let mut index = 0usize;
+        let mut saw_messages = false;
 
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
@@ -259,6 +260,7 @@ where
                 "type" => chat_type = Some(map.next_value::<String>()?),
                 "id" => tg_chat_id = map.next_value::<Option<i64>>()?,
                 "messages" => {
+                    saw_messages = true;
                     map.next_value_seed(MessagesSeed {
                         on_event: self.on_event,
                         index: &mut index,
@@ -269,6 +271,11 @@ where
                     let _ = map.next_value::<de::IgnoredAny>()?;
                 }
             }
+        }
+
+        if !saw_messages {
+            *self.error_slot.borrow_mut() = Some(ImportError::NotTelegramExport);
+            return Err(de::Error::custom("import aborted"));
         }
 
         Ok(ChatMeta {
