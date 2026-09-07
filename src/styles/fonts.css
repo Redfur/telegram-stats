@@ -1,0 +1,8 @@
+/* Локальные шрифты — без сети в рантайме, см. CLAUDE.md.
+   Oswald 600 подставлен вместо Barlow Condensed, Manrope 400/700 — вместо
+   Barlow: у Barlow нет кириллицы, а Oswald/Manrope её несут и держат
+   похожий на макет характер (конденсед-гротеск в заголовках, гуманистический
+   гротеск в тексте). Если в макете поменяют пару — поменять и здесь. */
+@import "@fontsource/oswald/600.css";
+@import "@fontsource/manrope/400.css";
+@import "@fontsource/manrope/700.css";

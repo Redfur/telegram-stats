@@ -1,49 +1,73 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
-
+// Временная витрина примитивов — проверка токенов, шрифтов и компонентов
+// перед тем, как поверх них строить настоящие экраны (см. docs/SPEC.md §10).
+// Заменяется первым реальным экраном (Библиотека).
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <main style={{ padding: "34px 40px", display: "flex", flexDirection: "column", gap: "26px", maxWidth: 640 }}>
+      <div>
+        <span className="kick">Витрина примитивов</span>
+        <h1 style={{ fontSize: 28, marginTop: 8 }}>Стареем но не сдаёмся</h1>
+        <p style={{ color: "var(--text-muted)", marginTop: 4 }}>
+          847 213 сообщения · март 2015 — декабрь 2025 · Паша, Марина, Дэн
+        </p>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      <section style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button className="btn btn-primary">Открыть</button>
+        <button className="btn btn-secondary">Обновить выгрузкой</button>
+        <button className="btn btn-ghost">Удалить</button>
+        <button className="btn btn-primary" disabled>
+          Недоступно
+        </button>
+      </section>
+
+      <section className="card">
+        <i className="corner tl" />
+        <i className="corner tr" />
+        <i className="corner bl" />
+        <i className="corner br" />
+        <span className="card-kicker">Рекорд дня</span>
+        <div className="num" style={{ font: "600 46px/.95 var(--font-head)" }}>
+          4 312
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>14 июня 2018 · ×9 к медиане</div>
+      </section>
+
+      <section className="seg" style={{ width: "fit-content" }}>
+        <span className="seg-opt on">Всё время</span>
+        <span className="seg-opt">Год</span>
+        <span className="seg-opt">Интервал…</span>
+      </section>
+
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Отображаемое имя</th>
+            <th style={{ textAlign: "right" }}>Сообщений</th>
+            <th>Метка</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Паша</td>
+            <td className="num" style={{ textAlign: "right" }}>
+              231 004
+            </td>
+            <td>
+              <span className="tag tag-accent">группа</span>
+            </td>
+          </tr>
+          <tr>
+            <td>Deleted Account</td>
+            <td className="num" style={{ textAlign: "right", color: "var(--text-faint)" }}>
+              20 814
+            </td>
+            <td>
+              <span className="tag tag-outline">бот</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </main>
   );
 }
