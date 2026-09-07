@@ -1,13 +1,17 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 /// Разрез «тип сообщения» — одна раскладка на все счётные метрики (макет
-/// «Дашборд», ход `t6`). 12 типов на этот срез, без реакций/полноценной
+/// «Дашборд», ход `t6`). 13 типов на этот срез, без реакций/полноценной
 /// социальной метрики — docs/SPEC.md §9 уже разносит реакции в отдельную
 /// будущую метрику со своей таблицей, здесь только то, что видно на одном
-/// сообщении.
+/// сообщении. `Text` не эксклюзивен с медиа-типами (фото с подписью — и
+/// `Photo`, и `Text` одновременно) — предикат просто `text_len > 0`, та же
+/// колонка, что уже пишется для каждого сообщения независимо от миграции
+/// `0004`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageTypeKind {
+    Text,
     Photo,
     Sticker,
     VoiceMessage,
@@ -23,7 +27,8 @@ pub enum MessageTypeKind {
 }
 
 impl MessageTypeKind {
-    pub const ALL: [MessageTypeKind; 12] = [
+    pub const ALL: [MessageTypeKind; 13] = [
+        MessageTypeKind::Text,
         MessageTypeKind::Photo,
         MessageTypeKind::Sticker,
         MessageTypeKind::VoiceMessage,
@@ -44,6 +49,7 @@ impl MessageTypeKind {
     /// которое знает, какая колонка отвечает за какой тип.
     fn predicate_sql(self) -> &'static str {
         match self {
+            MessageTypeKind::Text => "text_len > 0",
             MessageTypeKind::Photo => "has_photo = 1",
             MessageTypeKind::Sticker => "media_type = 'sticker'",
             MessageTypeKind::VoiceMessage => "media_type = 'voice_message'",
@@ -69,26 +75,55 @@ impl MessageTypeKind {
     }
 }
 
-/// Гранулярность именно этого блока — три уровня, не пять, как у
+/// Гранулярность гистограммы этого блока — три уровня, не пять, как у
 /// `granularity::Granularity` (граф активности), и намеренно с ним не
-/// связана. `Month`/`Day` — абсолютные календарные бакеты (временной
-/// ряд, как у графика активности), `HourOfDay` — агрегат по часу суток
-/// (`strftime('%H', ...)`, 24 бакета) — это распределение «в какое время
-/// суток», а не временной ряд, принципиально другая ось.
+/// связана. `Month` — абсолютный календарный бакет (временной ряд, как у
+/// графика активности). `DayOfWeek`/`HourOfDay` — распределения, а не
+/// временные ряды: «в какой день недели»/«в какое время суток» обычно
+/// присылают этот тип, агрегат по всему периоду сразу, не по конкретной
+/// неделе/дате.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TypeTimeView {
     Month,
-    Day,
+    DayOfWeek,
     HourOfDay,
 }
 
 impl TypeTimeView {
-    fn bucket_expr(self) -> &'static str {
+    /// Полное SQL-выражение для колонки-бакета, не просто формат
+    /// `strftime` — `DayOfWeek` нужен с понедельника (0..6), а «сырой»
+    /// `%w` у SQLite отдаёт с воскресенья, это арифметика поверх
+    /// `strftime`, а не подстановка формата.
+    fn bucket_select_expr(self) -> &'static str {
         match self {
-            TypeTimeView::Month => "%Y-%m",
-            TypeTimeView::Day => "%Y-%m-%d",
-            TypeTimeView::HourOfDay => "%H",
+            TypeTimeView::Month => "strftime('%Y-%m', ts, 'unixepoch')",
+            TypeTimeView::DayOfWeek => {
+                "CAST((CAST(strftime('%w', ts, 'unixepoch') AS INTEGER) + 6) % 7 AS TEXT)"
+            }
+            TypeTimeView::HourOfDay => "strftime('%H', ts, 'unixepoch')",
+        }
+    }
+}
+
+/// Абсолютная гранулярность «темпа»/«пика» в карточке сводки — не путать
+/// с `TypeTimeView` (что сейчас выбрано для гистограммы). Это всегда
+/// календарный временной ряд (месяц или день), независимо от того, что
+/// пользователь листает на графике: вопрос «какой в среднем темп» не
+/// должен скакать при переключении вида гистограммы на день недели/час
+/// суток, у которых усреднение по календарным бакетам не имеет смысла.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RateGranularity {
+    Month,
+    Day,
+}
+
+impl RateGranularity {
+    fn bucket_select_expr(self) -> &'static str {
+        match self {
+            RateGranularity::Month => "strftime('%Y-%m', ts, 'unixepoch')",
+            RateGranularity::Day => "strftime('%Y-%m-%d', ts, 'unixepoch')",
         }
     }
 }
@@ -186,7 +221,7 @@ pub fn get_message_type_overview(
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MessageTypeSummaryStats {
     Frequency {
-        rate_granularity: TypeTimeView,
+        rate_granularity: RateGranularity,
         rate_value: f64,
         peak: Option<TypeBucket>,
         top_sender: Option<String>,
@@ -286,25 +321,32 @@ pub fn get_message_type_detail(
     if month_available {
         views_available.push(TypeTimeView::Month);
     }
-    views_available.push(TypeTimeView::Day);
+    views_available.push(TypeTimeView::DayOfWeek);
     views_available.push(TypeTimeView::HourOfDay);
 
-    let rate_granularity = if month_available {
+    let default_view = if month_available {
         TypeTimeView::Month
     } else {
-        TypeTimeView::Day
+        TypeTimeView::DayOfWeek
     };
     let selected_view = view
         .filter(|v| views_available.contains(v))
-        .unwrap_or(rate_granularity);
+        .unwrap_or(default_view);
 
+    let rate_granularity = if month_available {
+        RateGranularity::Month
+    } else {
+        RateGranularity::Day
+    };
     // «Пик»/«рейт» считаются по rate_granularity независимо от того, что
     // сейчас выбрано для гистограммы — это разные вопросы: «какой темп в
-    // среднем» и «что показать на графике прямо сейчас».
+    // среднем» и «что показать на графике прямо сейчас» (которое может
+    // быть распределением по дню недели/часу суток, где «пик» в
+    // календарном смысле бессмысленен).
     let rate_buckets: Vec<(String, i64)> = {
-        let expr = rate_granularity.bucket_expr();
+        let sel = rate_granularity.bucket_select_expr();
         let sql = format!(
-            "SELECT strftime('{expr}', ts, 'unixepoch') b, COUNT(*) FROM messages \
+            "SELECT {sel} b, COUNT(*) FROM messages \
              WHERE chat_id = ?1 AND ts IS NOT NULL AND {predicate} GROUP BY b ORDER BY b"
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -364,15 +406,10 @@ pub fn get_message_type_detail(
         }
     };
 
-    let buckets: Vec<TypeBucket> = if selected_view == rate_granularity {
-        rate_buckets
-            .into_iter()
-            .map(|(bucket, count)| TypeBucket { bucket, count })
-            .collect()
-    } else {
-        let expr = selected_view.bucket_expr();
+    let buckets: Vec<TypeBucket> = {
+        let sel = selected_view.bucket_select_expr();
         let sql = format!(
-            "SELECT strftime('{expr}', ts, 'unixepoch') b, COUNT(*) FROM messages \
+            "SELECT {sel} b, COUNT(*) FROM messages \
              WHERE chat_id = ?1 AND ts IS NOT NULL AND {predicate} GROUP BY b ORDER BY b"
         );
         let mut stmt = conn.prepare(&sql)?;

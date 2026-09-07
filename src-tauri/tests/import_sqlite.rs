@@ -351,12 +351,33 @@ fn message_type_overview_counts_every_kind_in_english_chat() {
     assert!(overview.available);
     assert_eq!(overview.total_messages, chat.message_count);
     assert_eq!(overview.counts.len(), MessageTypeKind::ALL.len());
-    // Фикстура специально устроена так, что у каждого из 12 типов ровно
-    // одно вхождение — легко проверить, что ни один не потерялся и не
-    // задвоился в другой категории (например файл vs документ-без-медиатипа).
+    // Фикстура специально устроена так, что у каждого из 12 не-текстовых
+    // типов ровно одно вхождение — легко проверить, что ни один не
+    // потерялся и не задвоился в другой категории (например файл vs
+    // документ-без-медиатипа). Text не эксклюзивен с остальными — считает
+    // все сообщения с непустым текстом, включая подпись к фото (id 8).
     for c in &overview.counts {
-        assert_eq!(c.count, 1, "kind {:?} should have exactly one match", c.kind);
+        let expected = if c.kind == MessageTypeKind::Text { 7 } else { 1 };
+        assert_eq!(c.count, expected, "kind {:?} count mismatch", c.kind);
     }
+}
+
+#[test]
+fn a_photo_with_a_caption_counts_as_both_photo_and_text() {
+    // id 8 в фикстуре — фото с непустым text. Photo/Text не эксклюзивны
+    // (в отличие от media_type-типов друг с другом), одно сообщение
+    // должно засчитаться в обе пилюли одновременно.
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "english_chat.json");
+
+    let both: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM messages WHERE chat_id = ?1 AND has_photo = 1 AND text_len > 0",
+            [chat.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(both, 1, "the photo-with-caption fixture message must satisfy both predicates at once");
 }
 
 #[test]
@@ -421,7 +442,7 @@ fn short_chat_disables_month_view_and_degrades_the_peak() {
         !detail.views_available.contains(&TypeTimeView::Month),
         "a ~2-day chat must not offer a month view"
     );
-    assert_eq!(detail.selected_view, TypeTimeView::Day, "must fall back to the coarsest available view");
+    assert_eq!(detail.selected_view, TypeTimeView::DayOfWeek, "must fall back to the next available view");
     match detail.summary {
         MessageTypeSummaryStats::Frequency { peak, .. } => {
             assert!(peak.is_none(), "too few buckets for a meaningful peak — must degrade, not lie");
@@ -439,7 +460,60 @@ fn requesting_an_unavailable_view_falls_back_instead_of_erroring() {
     let detail = get_message_type_detail(&conn, chat.id, MessageTypeKind::Edited, Some(TypeTimeView::Month))
         .unwrap()
         .expect("fixture has exactly one edited message");
-    assert_eq!(detail.selected_view, TypeTimeView::Day);
+    assert_eq!(detail.selected_view, TypeTimeView::DayOfWeek);
+}
+
+#[test]
+fn day_of_week_view_buckets_by_weekday_monday_first_not_by_calendar_date() {
+    // 2024-01-01 — понедельник, 2024-01-03 — среда (внешний факт
+    // календаря, не зависит от кода). Два сообщения в один и тот же
+    // день недели (оба понедельника, разные даты) должны схлопнуться в
+    // один бакет "0" — это и отличает day_of_week от старого поведения
+    // "по дням" (абсолютная календарная дата, каждый день — свой бакет).
+    let mut conn = fresh_db();
+    let bytes_read = AtomicU64::new(0);
+    let cancel = AtomicBool::new(false);
+    let mut ctx = ImportContext {
+        bytes_read: &bytes_read,
+        on_progress: |_| {},
+        cancel: &cancel,
+    };
+
+    let export = br#"{
+        "name": "Weekday test", "type": "private_group", "id": 1,
+        "messages": [
+            {"type": "message", "id": 1, "date_unixtime": "1704103200", "from": "A", "from_id": "user1", "text": "monday one"},
+            {"type": "message", "id": 2, "date_unixtime": "1704708000", "from": "A", "from_id": "user1", "text": "monday two, a week later"},
+            {"type": "message", "id": 3, "date_unixtime": "1704276000", "from": "A", "from_id": "user1", "text": "wednesday"}
+        ]
+    }"#;
+    let chat = import_into_db(
+        &mut conn,
+        std::io::Cursor::new(export.to_vec()),
+        "weekday.json",
+        None,
+        &mut ctx,
+    )
+    .expect("import should succeed");
+
+    let detail = get_message_type_detail(
+        &conn,
+        chat.id,
+        MessageTypeKind::Text,
+        Some(TypeTimeView::DayOfWeek),
+    )
+    .unwrap()
+    .expect("all three messages have text");
+
+    assert_eq!(detail.selected_view, TypeTimeView::DayOfWeek);
+    let by_bucket: std::collections::HashMap<String, i64> = detail
+        .buckets
+        .into_iter()
+        .map(|b| (b.bucket, b.count))
+        .collect();
+    assert_eq!(by_bucket.get("0"), Some(&2), "both Mondays must collapse into weekday index 0");
+    assert_eq!(by_bucket.get("2"), Some(&1), "Wednesday must land on weekday index 2");
+    assert_eq!(by_bucket.len(), 2, "only two distinct weekdays occurred");
 }
 
 #[test]
@@ -507,7 +581,7 @@ fn message_type_metrics_never_panic_across_the_full_fixture_set() {
             let detail = get_message_type_detail(&conn, chat.id, kind, None).unwrap();
             if let Some(detail) = detail {
                 assert!(detail.total_count > 0, "{fixture_name}/{kind:?}: Some(..) implies a non-zero count");
-                for view in [TypeTimeView::Month, TypeTimeView::Day, TypeTimeView::HourOfDay] {
+                for view in [TypeTimeView::Month, TypeTimeView::DayOfWeek, TypeTimeView::HourOfDay] {
                     // Явный запрос любого из трёх видов не должен падать,
                     // даже если он недоступен для этого чата (тихий фолбэк).
                     get_message_type_detail(&conn, chat.id, kind, Some(view)).unwrap();

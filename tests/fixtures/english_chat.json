@@ -163,8 +163,13 @@
       "date_unixtime": "1735690020",
       "from": "Alice",
       "from_id": "user000000300",
-      "text": "",
-      "text_entities": [],
+      "text": "Grabbed this from the library",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Grabbed this from the library"
+        }
+      ],
       "photo": "photos/photo_1@01-01-2025_00-07-00.jpg",
       "photo_file_size": 184320,
       "width": 1280,
