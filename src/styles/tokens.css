@@ -1,0 +1,25 @@
+:root {
+  /* тёмная — тема по умолчанию */
+  --ground: #0d0f11;      --surface: #15171a;     --surface-raised: #1b1e21;
+  --border: #393c3e;      --border-soft: rgba(233,235,236,.09);
+  --text: #e9ebec;        --text-2: #c3c8cc;      --text-muted: #a2a8ae;
+  --text-muted-2: #989ea4; --text-faint: #8b9096;
+  --accent: #7fa6cc;      --accent-hover: #a6c3dd; --accent-pressed: #597ea3;
+  --accent-weak: rgba(127,166,204,.14);
+  --chart-fill: rgba(127,166,204,.18); --chart-line: #7fa6cc;
+  --steel-field: #1d2d3d;
+
+  --font-head: "Barlow Condensed"; --font-body: "Barlow";
+  --sp-1: 4px;  --sp-2: 6px;  --sp-3: 8px;  --sp-4: 10px; --sp-5: 12px;
+  --sp-6: 14px; --sp-7: 18px; --sp-8: 20px; --sp-9: 26px; --sp-10: 34px;
+  --radius: 0;  --border-w: 1px;
+}
+:root[data-theme="light"] {
+  --ground: #f2f2f3;      --surface: #f2f2f3;     --surface-raised: #e9e9ea;
+  --border: #d4d4d7;      --border-soft: rgba(29,31,32,.09);
+  --text: #1d1f20;        --text-2: #424244;      --text-muted: #5d5d60;
+  --text-muted-2: #6b6b6e; --text-faint: #7a7a7d;
+  --accent: #5980a6;      --accent-hover: #597ea3; --accent-pressed: #416180;
+  --accent-weak: #eef6ff;
+  --chart-fill: rgba(89,128,166,.18);  --chart-line: #5980a6;
+}
