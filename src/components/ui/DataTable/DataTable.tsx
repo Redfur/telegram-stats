@@ -1,16 +1,45 @@
-import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+  type OnChangeFn,
+  type RowSelectionState,
+} from "@tanstack/react-table";
 import styles from "./DataTable.module.css";
 
 // Тонкая обёртка над @tanstack/react-table (заголовок 3.4): сортировку,
-// пагинацию, виртуализацию решает библиотека, здесь только вёрстка под токены.
+// пагинацию, виртуализацию решает библиотека, здесь только вёрстка под
+// токены. Выбор строк — опциональный тонкий прокидыш состояния в саму
+// библиотеку (нужен шагу разбора участников, макет 3d), а не своя логика.
 interface DataTableProps<T> {
   data: T[];
   columns: ColumnDef<T, any>[];
   className?: string;
+  enableRowSelection?: boolean;
+  rowSelection?: RowSelectionState;
+  onRowSelectionChange?: OnChangeFn<RowSelectionState>;
+  getRowId?: (row: T) => string;
 }
 
-export function DataTable<T>({ data, columns, className }: DataTableProps<T>) {
-  const table = useReactTable({ data, columns, getCoreRowModel: getCoreRowModel() });
+export function DataTable<T>({
+  data,
+  columns,
+  className,
+  enableRowSelection,
+  rowSelection,
+  onRowSelectionChange,
+  getRowId,
+}: DataTableProps<T>) {
+  const table = useReactTable({
+    data,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    enableRowSelection,
+    state: rowSelection ? { rowSelection } : undefined,
+    onRowSelectionChange,
+    getRowId,
+  });
 
   return (
     <table className={[styles.table, className].filter(Boolean).join(" ")}>

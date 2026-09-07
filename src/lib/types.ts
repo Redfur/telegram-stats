@@ -47,3 +47,13 @@ export interface TopParticipants {
   degenerate: boolean;
   participants: ParticipantStat[];
 }
+
+export interface PersonRow {
+  id: number;
+  display_name: string | null;
+  aliases: string[];
+  message_count: number;
+  first_msg_ts: number | null;
+  last_msg_ts: number | null;
+  is_hidden: boolean;
+}

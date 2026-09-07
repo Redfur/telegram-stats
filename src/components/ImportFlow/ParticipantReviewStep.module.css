@@ -1,0 +1,111 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel {
+  width: 900px;
+  max-width: calc(100vw - var(--sp-8));
+  max-height: calc(100vh - var(--sp-9) * 2);
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.headRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  padding: var(--sp-6) var(--sp-8);
+  border-bottom: var(--border-w) solid var(--border-soft);
+}
+
+.kicker {
+  color: var(--accent);
+}
+
+.title {
+  margin: var(--sp-2) 0 0;
+  font-size: 20px;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: var(--text-muted-2);
+  margin-top: 2px;
+}
+
+.doneBtn {
+  margin-left: auto;
+}
+
+.actionBar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-8);
+  background: var(--accent-weak);
+  border-bottom: var(--border-w) solid var(--border-soft);
+}
+
+.selectedCount {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.renameInput {
+  flex: 1;
+  max-width: 260px;
+  background: var(--surface-raised);
+  border: var(--border-w) solid var(--border);
+  color: var(--text);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: 13px;
+}
+
+.tableWrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--sp-8);
+}
+
+.aliases {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.hiddenName {
+  color: var(--text-faint);
+}
+
+.hiddenTag {
+  margin-left: var(--sp-3);
+  font-size: 10px;
+  color: var(--text-faint);
+  border: var(--border-w) solid var(--border-soft);
+  padding: 1px 6px;
+}
+
+.footer {
+  padding: var(--sp-5) var(--sp-8);
+  border-top: var(--border-w) solid var(--border-soft);
+  display: flex;
+}
+
+.skip {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted-2);
+  cursor: pointer;
+}
+
+.skip:hover {
+  color: var(--text-2);
+}

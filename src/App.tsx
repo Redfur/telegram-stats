@@ -8,7 +8,9 @@ import { Dashboard } from "./screens/Dashboard/Dashboard";
 import { useChats } from "./hooks/useChats";
 import { useImportChat } from "./hooks/useImportChat";
 import { useDeleteChat } from "./hooks/useDeleteChat";
+import { usePeopleReview } from "./hooks/usePeopleReview";
 import { ImportFlowOverlay } from "./components/ImportFlow/ImportFlowOverlay";
+import { ParticipantReviewStep } from "./components/ImportFlow/ParticipantReviewStep";
 
 const STUB_TITLES: Record<Exclude<NavTarget, "library">, string> = {
   people: "Участники",
@@ -19,12 +21,15 @@ const STUB_TITLES: Record<Exclude<NavTarget, "library">, string> = {
 function App() {
   const [activeNav, setActiveNav] = useState<NavTarget>("library");
   const [openChatId, setOpenChatId] = useState<number | null>(null);
+  const [reviewChatId, setReviewChatId] = useState<number | null>(null);
   const { chats, refresh } = useChats();
 
   const handleImported = useCallback(
     async (chat: { id: number }) => {
       await refresh();
-      setOpenChatId(chat.id);
+      // Шаг 3 мастера импорта (макет 3d) — разбор участников — перед тем,
+      // как открыть дашборд, а не сразу.
+      setReviewChatId(chat.id);
     },
     [refresh],
   );
@@ -32,6 +37,7 @@ function App() {
     onImported: handleImported,
   });
   const { deleteChat } = useDeleteChat();
+  const { people, merge, hide, rename } = usePeopleReview(reviewChatId);
 
   function handleNavigate(target: NavTarget) {
     setOpenChatId(null);
@@ -46,6 +52,12 @@ function App() {
     await deleteChat(id);
     await refresh();
     setOpenChatId((current) => (current === id ? null : current));
+    setReviewChatId((current) => (current === id ? null : current));
+  }
+
+  function finishReview() {
+    if (reviewChatId != null) setOpenChatId(reviewChatId);
+    setReviewChatId(null);
   }
 
   let mainContent: ReactNode;
@@ -89,6 +101,16 @@ function App() {
         onPickAnother={importFile}
         onDismiss={dismissError}
       />
+      {reviewChatId != null && (
+        <ParticipantReviewStep
+          people={people}
+          onMerge={merge}
+          onHide={hide}
+          onRename={rename}
+          onDone={finishReview}
+          onSkip={finishReview}
+        />
+      )}
     </AppShell>
   );
 }
