@@ -8,6 +8,7 @@ import { Dashboard } from "./screens/Dashboard/Dashboard";
 import { useChats } from "./hooks/useChats";
 import { useImportChat } from "./hooks/useImportChat";
 import { useDeleteChat } from "./hooks/useDeleteChat";
+import { ImportFlowOverlay } from "./components/ImportFlow/ImportFlowOverlay";
 
 const STUB_TITLES: Record<Exclude<NavTarget, "library">, string> = {
   people: "Участники",
@@ -27,7 +28,9 @@ function App() {
     },
     [refresh],
   );
-  const { importFile, isImporting, error } = useImportChat({ onImported: handleImported });
+  const { importFile, cancelImport, dismissError, isImporting, progress, error } = useImportChat({
+    onImported: handleImported,
+  });
   const { deleteChat } = useDeleteChat();
 
   function handleNavigate(target: NavTarget) {
@@ -55,12 +58,12 @@ function App() {
           chats={chats}
           onImport={importFile}
           isImporting={isImporting}
-          error={error}
+          error={error?.message ?? null}
           onSelectChat={handleSelectChat}
           onDelete={handleDeleteChat}
         />
       ) : (
-        <LibraryEmptyState onPickFile={importFile} isImporting={isImporting} error={error} />
+        <LibraryEmptyState onPickFile={importFile} isImporting={isImporting} error={error?.message ?? null} />
       );
   } else {
     mainContent = <ComingSoon title={STUB_TITLES[activeNav]} />;
@@ -79,6 +82,13 @@ function App() {
       }
     >
       {mainContent}
+      <ImportFlowOverlay
+        progress={progress}
+        error={error}
+        onCancel={cancelImport}
+        onPickAnother={importFile}
+        onDismiss={dismissError}
+      />
     </AppShell>
   );
 }
