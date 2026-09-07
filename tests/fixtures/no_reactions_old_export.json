@@ -1,0 +1,277 @@
+{
+  "name": "Дача",
+  "type": "private_group",
+  "id": 4000000004,
+  "messages": [
+    {
+      "id": 1,
+      "type": "message",
+      "date": "2015-01-01T10:00:00",
+      "date_unixtime": "1420070400",
+      "text": "сообщение номер 1 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 1 на даче"
+        }
+      ],
+      "from": "Лёха-старший",
+      "from_id": "user000000200"
+    },
+    {
+      "id": 2,
+      "type": "message",
+      "date": "2015-01-01T11:30:00",
+      "date_unixtime": "1420072200",
+      "text": "сообщение номер 2 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 2 на даче"
+        }
+      ],
+      "from": "Вика",
+      "from_id": "user000000201"
+    },
+    {
+      "id": 3,
+      "type": "message",
+      "date": "2015-01-01T12:00:00",
+      "date_unixtime": "1420074000",
+      "text": "сообщение номер 3 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 3 на даче"
+        }
+      ],
+      "from": "Артём",
+      "from_id": "user000000202"
+    },
+    {
+      "id": 4,
+      "type": "message",
+      "date": "2015-01-01T13:30:00",
+      "date_unixtime": "1420075800",
+      "text": "сообщение номер 4 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 4 на даче"
+        }
+      ],
+      "from": "Лёха-старший",
+      "from_id": "user000000200"
+    },
+    {
+      "id": 5,
+      "type": "message",
+      "date": "2015-01-01T14:00:00",
+      "date_unixtime": "1420077600",
+      "text": "сообщение номер 5 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 5 на даче"
+        }
+      ],
+      "from": "Вика",
+      "from_id": "user000000201"
+    },
+    {
+      "id": 6,
+      "type": "message",
+      "date": "2015-01-01T15:30:00",
+      "date_unixtime": "1420079400",
+      "text": "сообщение номер 6 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 6 на даче"
+        }
+      ],
+      "from": "Артём",
+      "from_id": "user000000202"
+    },
+    {
+      "id": 7,
+      "type": "message",
+      "date": "2015-01-01T16:00:00",
+      "date_unixtime": "1420081200",
+      "text": "сообщение номер 7 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 7 на даче"
+        }
+      ],
+      "from": "Лёха-старший",
+      "from_id": "user000000200"
+    },
+    {
+      "id": 8,
+      "type": "message",
+      "date": "2015-01-01T17:30:00",
+      "date_unixtime": "1420083000",
+      "text": "сообщение номер 8 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 8 на даче"
+        }
+      ],
+      "from": "Вика",
+      "from_id": "user000000201"
+    },
+    {
+      "id": 9,
+      "type": "message",
+      "date": "2015-01-02T18:00:00",
+      "date_unixtime": "1420084800",
+      "text": "сообщение номер 9 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 9 на даче"
+        }
+      ],
+      "from": "Артём",
+      "from_id": "user000000202"
+    },
+    {
+      "id": 10,
+      "type": "message",
+      "date": "2015-01-02T19:30:00",
+      "date_unixtime": "1420086600",
+      "text": "сообщение номер 10 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 10 на даче"
+        }
+      ],
+      "from": "Лёха-старший",
+      "from_id": "user000000200"
+    },
+    {
+      "id": 11,
+      "type": "message",
+      "date": "2015-01-02T20:00:00",
+      "date_unixtime": "1420088400",
+      "text": "сообщение номер 11 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 11 на даче"
+        }
+      ],
+      "from": "Вика",
+      "from_id": "user000000201"
+    },
+    {
+      "id": 12,
+      "type": "message",
+      "date": "2015-01-02T21:30:00",
+      "date_unixtime": "1420090200",
+      "text": "сообщение номер 12 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 12 на даче"
+        }
+      ],
+      "from": "Артём",
+      "from_id": "user000000202"
+    },
+    {
+      "id": 13,
+      "type": "message",
+      "date": "2015-01-02T22:00:00",
+      "date_unixtime": "1420092000",
+      "text": "сообщение номер 13 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 13 на даче"
+        }
+      ],
+      "from": "Лёха-старший",
+      "from_id": "user000000200"
+    },
+    {
+      "id": 14,
+      "type": "message",
+      "date": "2015-01-02T23:30:00",
+      "date_unixtime": "1420093800",
+      "text": "сообщение номер 14 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 14 на даче"
+        }
+      ],
+      "from": "Вика",
+      "from_id": "user000000201"
+    },
+    {
+      "id": 15,
+      "type": "message",
+      "date": "2015-01-02T00:00:00",
+      "date_unixtime": "1420095600",
+      "text": "сообщение номер 15 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 15 на даче"
+        }
+      ],
+      "from": "Артём",
+      "from_id": "user000000202"
+    },
+    {
+      "id": 16,
+      "type": "message",
+      "date": "2015-01-02T01:30:00",
+      "date_unixtime": "1420097400",
+      "text": "сообщение номер 16 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 16 на даче"
+        }
+      ],
+      "from": "Лёха-старший",
+      "from_id": "user000000200"
+    },
+    {
+      "id": 17,
+      "type": "message",
+      "date": "2015-01-03T02:00:00",
+      "date_unixtime": "1420099200",
+      "text": "сообщение номер 17 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 17 на даче"
+        }
+      ],
+      "from": "Вика",
+      "from_id": "user000000201"
+    },
+    {
+      "id": 18,
+      "type": "message",
+      "date": "2015-01-03T03:30:00",
+      "date_unixtime": "1420101000",
+      "text": "сообщение номер 18 на даче",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "сообщение номер 18 на даче"
+        }
+      ],
+      "from": "Артём",
+      "from_id": "user000000202"
+    }
+  ]
+}

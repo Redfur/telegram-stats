@@ -1,0 +1,160 @@
+{
+  "name": "Book Club",
+  "type": "public_supergroup",
+  "id": 4000000005,
+  "messages": [
+    {
+      "id": 1,
+      "type": "message",
+      "date": "2025-01-01T00:00:00",
+      "date_unixtime": "1735689600",
+      "from": "Alice",
+      "from_id": "user000000300",
+      "text": [
+        "Anyone up for ",
+        {
+          "type": "hashtag",
+          "text": "#bookclub"
+        },
+        " this week?"
+      ],
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Anyone up for "
+        },
+        {
+          "type": "hashtag",
+          "text": "#bookclub"
+        },
+        {
+          "type": "plain",
+          "text": " this week?"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "message",
+      "date": "2025-01-01T00:01:00",
+      "date_unixtime": "1735689660",
+      "from": "Bob",
+      "from_id": "user000000301",
+      "text": [
+        "Yes! Also check ",
+        {
+          "type": "spoiler",
+          "text": "the ending"
+        },
+        " out:"
+      ],
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Yes! Also check "
+        },
+        {
+          "type": "spoiler",
+          "text": "the ending"
+        },
+        {
+          "type": "plain",
+          "text": " out:"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "message",
+      "date": "2025-01-01T00:02:00",
+      "date_unixtime": "1735689720",
+      "from": "Carol",
+      "from_id": "user000000302",
+      "text": [
+        "run this: ",
+        {
+          "type": "code",
+          "text": "pip install rich"
+        }
+      ],
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "run this: "
+        },
+        {
+          "type": "code",
+          "text": "pip install rich"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "message",
+      "date": "2025-01-01T00:03:00",
+      "date_unixtime": "1735689780",
+      "from": "Alice",
+      "from_id": "user000000300",
+      "text": "",
+      "text_entities": [],
+      "media_type": "sticker",
+      "sticker_emoji": "📚",
+      "file": "(File not included. Change data exporting settings to download.)",
+      "file_name": "sticker.webp",
+      "file_size": 28311,
+      "mime_type": "image/webp",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": 5,
+      "type": "message",
+      "date": "2025-01-01T00:04:00",
+      "date_unixtime": "1735689840",
+      "from": "Bob",
+      "from_id": "user000000301",
+      "text": "",
+      "text_entities": [],
+      "media_type": "voice_message",
+      "duration_seconds": 14,
+      "file": "(File not included. Change data exporting settings to download.)",
+      "file_size": 22190,
+      "mime_type": "audio/ogg"
+    },
+    {
+      "id": 6,
+      "type": "message",
+      "date": "2025-01-01T00:05:00",
+      "date_unixtime": "1735689900",
+      "from": "Carol",
+      "from_id": "user000000302",
+      "text": "",
+      "text_entities": [],
+      "media_type": "video_file",
+      "duration_seconds": 42,
+      "file": "(File not included. Change data exporting settings to download.)",
+      "file_name": "clip.mp4",
+      "file_size": 3021044,
+      "mime_type": "video/mp4",
+      "width": 720,
+      "height": 1280
+    },
+    {
+      "id": 7,
+      "type": "message",
+      "date": "2025-01-01T00:06:00",
+      "date_unixtime": "1735689960",
+      "from": "Bob",
+      "from_id": "user000000301",
+      "text": "Forwarding this from another chat",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Forwarding this from another chat"
+        }
+      ],
+      "forwarded_from": "Reading News Channel",
+      "forwarded_from_id": "channel9876543210"
+    }
+  ]
+}

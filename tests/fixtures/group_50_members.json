@@ -1,0 +1,1380 @@
+{
+  "name": "Однокурсники",
+  "type": "private_supergroup",
+  "id": 4000000003,
+  "messages": [
+    {
+      "id": 1,
+      "type": "service",
+      "date": "2020-01-01T10:00:00",
+      "date_unixtime": "1577836800",
+      "actor": "Аня",
+      "actor_id": "user000000100",
+      "action": "create_group",
+      "title": "Однокурсники",
+      "text": "",
+      "text_entities": []
+    },
+    {
+      "id": 2,
+      "type": "service",
+      "date": "2020-01-01T10:01:00",
+      "date_unixtime": "1577836860",
+      "actor": "Аня",
+      "actor_id": "user000000100",
+      "action": "invite_members",
+      "members": [
+        "Боря",
+        "Вера",
+        "Гоша",
+        "Даша",
+        "Егор",
+        "Женя",
+        "Зоя",
+        "Игорь",
+        "Катя"
+      ],
+      "text": "",
+      "text_entities": []
+    },
+    {
+      "id": 3,
+      "type": "message",
+      "date": "2020-01-01T10:00:00",
+      "date_unixtime": "1577840400",
+      "from": "Аня",
+      "from_id": "user000000100",
+      "text": "привет всем, я Аня",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Аня"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "message",
+      "date": "2020-01-01T11:00:00",
+      "date_unixtime": "1577844000",
+      "from": "Боря",
+      "from_id": "user000000101",
+      "text": "привет всем, я Боря",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Боря"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "message",
+      "date": "2020-01-01T12:00:00",
+      "date_unixtime": "1577847600",
+      "from": "Вера",
+      "from_id": "user000000102",
+      "text": "привет всем, я Вера",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Вера"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "message",
+      "date": "2020-01-01T13:00:00",
+      "date_unixtime": "1577851200",
+      "from": "Гоша",
+      "from_id": "user000000103",
+      "text": "привет всем, я Гоша",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Гоша"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "message",
+      "date": "2020-01-01T14:00:00",
+      "date_unixtime": "1577854800",
+      "from": "Даша",
+      "from_id": "user000000104",
+      "text": "привет всем, я Даша",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Даша"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "message",
+      "date": "2020-01-01T15:00:00",
+      "date_unixtime": "1577858400",
+      "from": "Егор",
+      "from_id": "user000000105",
+      "text": "привет всем, я Егор",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Егор"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "message",
+      "date": "2020-01-01T16:00:00",
+      "date_unixtime": "1577862000",
+      "from": "Женя",
+      "from_id": "user000000106",
+      "text": "привет всем, я Женя",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Женя"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "message",
+      "date": "2020-01-01T17:00:00",
+      "date_unixtime": "1577865600",
+      "from": "Зоя",
+      "from_id": "user000000107",
+      "text": "привет всем, я Зоя",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Зоя"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "message",
+      "date": "2020-01-01T18:00:00",
+      "date_unixtime": "1577869200",
+      "from": "Игорь",
+      "from_id": "user000000108",
+      "text": "привет всем, я Игорь",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Игорь"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "message",
+      "date": "2020-01-01T19:00:00",
+      "date_unixtime": "1577872800",
+      "from": "Катя",
+      "from_id": "user000000109",
+      "text": "привет всем, я Катя",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Катя"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "message",
+      "date": "2020-01-01T20:00:00",
+      "date_unixtime": "1577876400",
+      "from": "Лена",
+      "from_id": "user000000110",
+      "text": "привет всем, я Лена",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Лена"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "message",
+      "date": "2020-01-01T21:00:00",
+      "date_unixtime": "1577880000",
+      "from": "Миша",
+      "from_id": "user000000111",
+      "text": "привет всем, я Миша",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Миша"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "message",
+      "date": "2020-01-01T22:00:00",
+      "date_unixtime": "1577883600",
+      "from": "Настя",
+      "from_id": "user000000112",
+      "text": "привет всем, я Настя",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Настя"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "message",
+      "date": "2020-01-01T23:00:00",
+      "date_unixtime": "1577887200",
+      "from": "Олег",
+      "from_id": "user000000113",
+      "text": "привет всем, я Олег",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Олег"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "message",
+      "date": "2020-01-01T00:00:00",
+      "date_unixtime": "1577890800",
+      "from": "Паша",
+      "from_id": "user000000114",
+      "text": "привет всем, я Паша",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Паша"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "message",
+      "date": "2020-01-01T01:00:00",
+      "date_unixtime": "1577894400",
+      "from": "Рита",
+      "from_id": "user000000115",
+      "text": "привет всем, я Рита",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Рита"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "message",
+      "date": "2020-01-01T02:00:00",
+      "date_unixtime": "1577898000",
+      "from": "Слава",
+      "from_id": "user000000116",
+      "text": "привет всем, я Слава",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Слава"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "message",
+      "date": "2020-01-01T03:00:00",
+      "date_unixtime": "1577901600",
+      "from": "Таня",
+      "from_id": "user000000117",
+      "text": "привет всем, я Таня",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Таня"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "message",
+      "date": "2020-01-01T04:00:00",
+      "date_unixtime": "1577905200",
+      "from": "Уля",
+      "from_id": "user000000118",
+      "text": "привет всем, я Уля",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Уля"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "message",
+      "date": "2020-01-01T05:00:00",
+      "date_unixtime": "1577908800",
+      "from": "Федя",
+      "from_id": "user000000119",
+      "text": "привет всем, я Федя",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Федя"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "message",
+      "date": "2020-01-01T06:00:00",
+      "date_unixtime": "1577912400",
+      "from": "Галя",
+      "from_id": "user000000120",
+      "text": "привет всем, я Галя",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Галя"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "message",
+      "date": "2020-01-01T07:00:00",
+      "date_unixtime": "1577916000",
+      "from": "Дима",
+      "from_id": "user000000121",
+      "text": "привет всем, я Дима",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Дима"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "message",
+      "date": "2020-01-01T08:00:00",
+      "date_unixtime": "1577919600",
+      "from": "Инна",
+      "from_id": "user000000122",
+      "text": "привет всем, я Инна",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Инна"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "message",
+      "date": "2020-01-01T09:00:00",
+      "date_unixtime": "1577923200",
+      "from": "Ксюша",
+      "from_id": "user000000123",
+      "text": "привет всем, я Ксюша",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Ксюша"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "message",
+      "date": "2020-01-01T10:00:00",
+      "date_unixtime": "1577926800",
+      "from": "Лёша",
+      "from_id": "user000000124",
+      "text": "привет всем, я Лёша",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Лёша"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "message",
+      "date": "2020-01-01T11:00:00",
+      "date_unixtime": "1577930400",
+      "from": "Маша",
+      "from_id": "user000000125",
+      "text": "привет всем, я Маша",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Маша"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        },
+        {
+          "type": "custom_emoji",
+          "count": 1,
+          "document_id": "5432101234567890123",
+          "recent": [
+            {
+              "from": "Вера",
+              "from_id": "user000000102",
+              "date": "2020-01-01T12:02:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "message",
+      "date": "2020-01-01T12:00:00",
+      "date_unixtime": "1577934000",
+      "from": "Ната",
+      "from_id": "user000000126",
+      "text": "привет всем, я Ната",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Ната"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "message",
+      "date": "2020-01-01T13:00:00",
+      "date_unixtime": "1577937600",
+      "from": "Оля",
+      "from_id": "user000000127",
+      "text": "привет всем, я Оля",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Оля"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "message",
+      "date": "2020-01-01T14:00:00",
+      "date_unixtime": "1577941200",
+      "from": "Петя",
+      "from_id": "user000000128",
+      "text": "привет всем, я Петя",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Петя"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "message",
+      "date": "2020-01-01T15:00:00",
+      "date_unixtime": "1577944800",
+      "from": "Рома",
+      "from_id": "user000000129",
+      "text": "привет всем, я Рома",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Рома"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "message",
+      "date": "2020-01-01T16:00:00",
+      "date_unixtime": "1577948400",
+      "from": "Света",
+      "from_id": "user000000130",
+      "text": "привет всем, я Света",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Света"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        },
+        {
+          "type": "custom_emoji",
+          "count": 1,
+          "document_id": "5432101234567890123",
+          "recent": [
+            {
+              "from": "Вера",
+              "from_id": "user000000102",
+              "date": "2020-01-01T12:02:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "message",
+      "date": "2020-01-01T17:00:00",
+      "date_unixtime": "1577952000",
+      "from": "Толя",
+      "from_id": "user000000131",
+      "text": "привет всем, я Толя",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Толя"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "type": "message",
+      "date": "2020-01-01T18:00:00",
+      "date_unixtime": "1577955600",
+      "from": "Ульяна",
+      "from_id": "user000000132",
+      "text": "привет всем, я Ульяна",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Ульяна"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "message",
+      "date": "2020-01-01T19:00:00",
+      "date_unixtime": "1577959200",
+      "from": "Фаина",
+      "from_id": "user000000133",
+      "text": "привет всем, я Фаина",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Фаина"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "type": "message",
+      "date": "2020-01-01T20:00:00",
+      "date_unixtime": "1577962800",
+      "from": "Хельга",
+      "from_id": "user000000134",
+      "text": "привет всем, я Хельга",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Хельга"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "type": "message",
+      "date": "2020-01-01T21:00:00",
+      "date_unixtime": "1577966400",
+      "from": "Цветана",
+      "from_id": "user000000135",
+      "text": "привет всем, я Цветана",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Цветана"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        },
+        {
+          "type": "custom_emoji",
+          "count": 1,
+          "document_id": "5432101234567890123",
+          "recent": [
+            {
+              "from": "Вера",
+              "from_id": "user000000102",
+              "date": "2020-01-01T12:02:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "type": "message",
+      "date": "2020-01-01T22:00:00",
+      "date_unixtime": "1577970000",
+      "from": "Чарльз",
+      "from_id": "user000000136",
+      "text": "привет всем, я Чарльз",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Чарльз"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "type": "message",
+      "date": "2020-01-01T23:00:00",
+      "date_unixtime": "1577973600",
+      "from": "Шура",
+      "from_id": "user000000137",
+      "text": "привет всем, я Шура",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Шура"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "type": "message",
+      "date": "2020-01-01T00:00:00",
+      "date_unixtime": "1577977200",
+      "from": "Эля",
+      "from_id": "user000000138",
+      "text": "привет всем, я Эля",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Эля"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "type": "message",
+      "date": "2020-01-01T01:00:00",
+      "date_unixtime": "1577980800",
+      "from": "Юля",
+      "from_id": "user000000139",
+      "text": "привет всем, я Юля",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Юля"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "type": "message",
+      "date": "2020-01-01T02:00:00",
+      "date_unixtime": "1577984400",
+      "from": "Яна",
+      "from_id": "user000000140",
+      "text": "привет всем, я Яна",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Яна"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        },
+        {
+          "type": "custom_emoji",
+          "count": 1,
+          "document_id": "5432101234567890123",
+          "recent": [
+            {
+              "from": "Вера",
+              "from_id": "user000000102",
+              "date": "2020-01-01T12:02:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "type": "message",
+      "date": "2020-01-01T03:00:00",
+      "date_unixtime": "1577988000",
+      "from": "Артём",
+      "from_id": "user000000141",
+      "text": "привет всем, я Артём",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Артём"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "type": "message",
+      "date": "2020-01-01T04:00:00",
+      "date_unixtime": "1577991600",
+      "from": "Богдан",
+      "from_id": "user000000142",
+      "text": "привет всем, я Богдан",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Богдан"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 46,
+      "type": "message",
+      "date": "2020-01-01T05:00:00",
+      "date_unixtime": "1577995200",
+      "from": "Вика",
+      "from_id": "user000000143",
+      "text": "привет всем, я Вика",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Вика"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "type": "message",
+      "date": "2020-01-01T06:00:00",
+      "date_unixtime": "1577998800",
+      "from": "Гриша",
+      "from_id": "user000000144",
+      "text": "привет всем, я Гриша",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Гриша"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "type": "message",
+      "date": "2020-01-01T07:00:00",
+      "date_unixtime": "1578002400",
+      "from": "Дуся",
+      "from_id": "user000000145",
+      "text": "привет всем, я Дуся",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Дуся"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        },
+        {
+          "type": "custom_emoji",
+          "count": 1,
+          "document_id": "5432101234567890123",
+          "recent": [
+            {
+              "from": "Вера",
+              "from_id": "user000000102",
+              "date": "2020-01-01T12:02:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "type": "message",
+      "date": "2020-01-01T08:00:00",
+      "date_unixtime": "1578006000",
+      "from": "Ефим",
+      "from_id": "user000000146",
+      "text": "привет всем, я Ефим",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Ефим"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 50,
+      "type": "message",
+      "date": "2020-01-01T09:00:00",
+      "date_unixtime": "1578009600",
+      "from": "Жора",
+      "from_id": "user000000147",
+      "text": "привет всем, я Жора",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "привет всем, я Жора"
+        }
+      ],
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 2,
+          "emoji": "👍",
+          "recent": [
+            {
+              "from": "Аня",
+              "from_id": "user000000100",
+              "date": "2020-01-01T12:00:00"
+            },
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2020-01-01T12:01:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 51,
+      "type": "message",
+      "date": "2020-01-02T09:00:00",
+      "date_unixtime": "1577923300",
+      "from": "Deleted Account",
+      "from_id": "user000009001",
+      "text": "го на созвон",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "го на созвон"
+        }
+      ]
+    },
+    {
+      "id": 52,
+      "type": "message",
+      "date": "2020-01-02T09:05:00",
+      "date_unixtime": "1577923600",
+      "from": "GroupStatsBot",
+      "from_id": "channel1234567890",
+      "via_bot": "GroupStatsBot",
+      "text": "Статистика чата за неделю",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Статистика чата за неделю"
+        }
+      ]
+    },
+    {
+      "id": 53,
+      "type": "message",
+      "date": "2020-01-02T10:00:00",
+      "date_unixtime": "1577926800",
+      "from": "Гоша",
+      "from_id": "user000000103",
+      "poll": {
+        "question": "Куда едем летом?",
+        "closed": false,
+        "total_voters": 12,
+        "answers": [
+          {
+            "text": "Море",
+            "voters": 7,
+            "chosen": false
+          },
+          {
+            "text": "Горы",
+            "voters": 5,
+            "chosen": false
+          }
+        ]
+      },
+      "text": "",
+      "text_entities": []
+    },
+    {
+      "id": 54,
+      "type": "message",
+      "date": "2020-01-02T10:05:00",
+      "date_unixtime": "1577927100",
+      "from": "Даша",
+      "from_id": "user000000104",
+      "location_information": {
+        "latitude": 55.751244,
+        "longitude": 37.618423
+      },
+      "text": "",
+      "text_entities": []
+    },
+    {
+      "id": 55,
+      "type": "service",
+      "date": "2020-01-03T08:00:00",
+      "date_unixtime": "1578009600",
+      "actor": "Егор",
+      "actor_id": "user000000105",
+      "action": "pin_message",
+      "message_id": 3,
+      "text": "",
+      "text_entities": []
+    },
+    {
+      "id": 56,
+      "type": "service",
+      "date": "2020-01-03T08:05:00",
+      "date_unixtime": "1578009900",
+      "actor": "Аня",
+      "actor_id": "user000000100",
+      "action": "edit_group_photo",
+      "photo": "(File not included. Change data exporting settings to download.)",
+      "photo_file_size": 45213,
+      "text": "",
+      "text_entities": []
+    },
+    {
+      "id": 57,
+      "type": "service",
+      "date": "2020-01-03T08:10:00",
+      "date_unixtime": "1578010200",
+      "actor": "Аня",
+      "actor_id": "user000000100",
+      "action": "remove_members",
+      "members": [
+        "Жора"
+      ],
+      "text": "",
+      "text_entities": []
+    },
+    {
+      "id": 58,
+      "type": "service",
+      "date": "2021-06-01T12:00:00",
+      "date_unixtime": "1624836800",
+      "actor": "Аня",
+      "actor_id": "user000000100",
+      "action": "migrate_to_supergroup",
+      "text": "",
+      "text_entities": []
+    }
+  ]
+}

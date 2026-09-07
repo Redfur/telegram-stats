@@ -1,0 +1,92 @@
+{
+  "name": "Марина",
+  "type": "personal_chat",
+  "id": 4000000002,
+  "messages": [
+    {
+      "id": 1,
+      "type": "message",
+      "date": "2024-01-01T09:00:00",
+      "date_unixtime": "1704067200",
+      "text": "с новым годом!",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "с новым годом!"
+        }
+      ],
+      "from": "Дэн",
+      "from_id": "user000000010"
+    },
+    {
+      "id": 2,
+      "type": "message",
+      "date": "2024-01-01T09:05:00",
+      "date_unixtime": "1704067500",
+      "text": "и тебя!",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "и тебя!"
+        }
+      ],
+      "from": "Марина",
+      "from_id": "user000000002"
+    },
+    {
+      "id": 3,
+      "type": "service",
+      "date": "2024-01-01T20:00:00",
+      "date_unixtime": "1704106800",
+      "actor": "Дэн",
+      "actor_id": "user000000010",
+      "action": "phone_call",
+      "duration": 184,
+      "discard_reason": "hangup",
+      "text": "",
+      "text_entities": []
+    },
+    {
+      "id": 4,
+      "type": "message",
+      "date": "2024-01-01T20:05:00",
+      "date_unixtime": "1704107100",
+      "text": "хорошо поговорили",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "хорошо поговорили"
+        }
+      ],
+      "from": "Марина",
+      "from_id": "user000000002"
+    },
+    {
+      "id": 5,
+      "type": "service",
+      "date": "2024-02-14T18:00:00",
+      "date_unixtime": "1708113600",
+      "actor": "Марина",
+      "actor_id": "user000000002",
+      "action": "group_call",
+      "duration": 612,
+      "text": "",
+      "text_entities": []
+    },
+    {
+      "id": 6,
+      "type": "message",
+      "date": "2024-02-14T18:15:00",
+      "date_unixtime": "1708114500",
+      "text": "го видеосозвон в выходные",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "го видеосозвон в выходные"
+        }
+      ],
+      "from": "Дэн",
+      "from_id": "user000000010"
+    }
+  ]
+}

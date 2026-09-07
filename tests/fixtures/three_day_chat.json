@@ -1,0 +1,261 @@
+{
+  "name": "Ремонт кухни",
+  "type": "private_group",
+  "id": 4000000001,
+  "messages": [
+    {
+      "id": 1,
+      "type": "message",
+      "date": "2025-05-12T00:00:00",
+      "date_unixtime": "1747008000",
+      "from": "Паша",
+      "from_id": "user000000001",
+      "text": "Го завтра красить потолок?",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Го завтра красить потолок?"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "message",
+      "date": "2025-05-12T00:01:00",
+      "date_unixtime": "1747008060",
+      "from": "Марина",
+      "from_id": "user000000002",
+      "text": "Го, только краску купить надо",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Го, только краску купить надо"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "message",
+      "date": "2025-05-12T00:02:00",
+      "date_unixtime": "1747008120",
+      "from": "Костя",
+      "from_id": "user000000003",
+      "text": [
+        "Заказал ",
+        {
+          "type": "link",
+          "text": "тут",
+          "href": "https://example.invalid/paint"
+        },
+        ", завтра привезут"
+      ],
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Заказал "
+        },
+        {
+          "type": "link",
+          "text": "тут",
+          "href": "https://example.invalid/paint"
+        },
+        {
+          "type": "plain",
+          "text": ", завтра привезут"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "message",
+      "date": "2025-05-12T00:03:00",
+      "date_unixtime": "1747008180",
+      "from": "Паша",
+      "from_id": "user000000001",
+      "text": "красава",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "красава"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "message",
+      "date": "2025-05-13T00:00:00",
+      "date_unixtime": "1747094400",
+      "from": "Паша",
+      "from_id": "user000000001",
+      "text": "Валик забыл, кто-то может привезти?",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Валик забыл, кто-то может привезти?"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "message",
+      "date": "2025-05-13T00:00:30",
+      "date_unixtime": "1747094430",
+      "from": "Марина",
+      "from_id": "user000000002",
+      "text": "у меня есть, возьму",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "у меня есть, возьму"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "message",
+      "date": "2025-05-13T00:01:30",
+      "date_unixtime": "1747094490",
+      "from": "Костя",
+      "from_id": "user000000003",
+      "text": "Опоздаю на час, пробки",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Опоздаю на час, пробки"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "message",
+      "date": "2025-05-13T00:02:00",
+      "date_unixtime": "1747094520",
+      "from": "Паша",
+      "from_id": "user000000001",
+      "text": "ладно, ждём",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "ладно, ждём"
+        }
+      ],
+      "reply_to_message_id": 7
+    },
+    {
+      "id": 9,
+      "type": "message",
+      "date": "2025-05-13T00:03:20",
+      "date_unixtime": "1747094600",
+      "from": "Марина",
+      "from_id": "user000000002",
+      "text": "Потолок готов, ",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Потолок готов, "
+        }
+      ],
+      "edited": "2025-05-13T09:10:00",
+      "edited_unixtime": "1747094800"
+    },
+    {
+      "id": 10,
+      "type": "message",
+      "date": "2025-05-13T00:04:20",
+      "date_unixtime": "1747094660",
+      "from": "Костя",
+      "from_id": "user000000003",
+      "text": "красиво вышло",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "красиво вышло"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "message",
+      "date": "2025-05-14T00:00:00",
+      "date_unixtime": "1747180800",
+      "from": "Паша",
+      "from_id": "user000000001",
+      "text": "Стены завтра?",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Стены завтра?"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "message",
+      "date": "2025-05-14T00:00:40",
+      "date_unixtime": "1747180840",
+      "from": "Марина",
+      "from_id": "user000000002",
+      "text": "давай",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "давай"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "message",
+      "date": "2025-05-14T10:00:00",
+      "date_unixtime": "1747180900",
+      "from": "Костя",
+      "from_id": "user000000003",
+      "text": "ок, го в 11"
+    },
+    {
+      "id": 14,
+      "type": "message",
+      "date": "2025-05-14T00:05:00",
+      "date_unixtime": "1747181100",
+      "from": "Паша",
+      "from_id": "user000000001",
+      "text": "погнали",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "погнали"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "message",
+      "date": "2025-05-14T00:06:40",
+      "date_unixtime": "1747181200",
+      "from": "Марина",
+      "from_id": "user000000002",
+      "text": "🎨🎨🎨",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "🎨🎨🎨"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "message",
+      "date": "2025-05-14T00:08:20",
+      "date_unixtime": "1747181300",
+      "from": "Костя",
+      "from_id": "user000000003",
+      "text": "финал!",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "финал!"
+        }
+      ]
+    }
+  ]
+}
