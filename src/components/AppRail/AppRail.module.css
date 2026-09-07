@@ -21,6 +21,31 @@
   line-height: 1.5;
 }
 
+.chatList {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.chatItem {
+  all: unset;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px var(--sp-6);
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+.chatItem:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.chatItem.active {
+  border-left-color: var(--accent);
+  background: var(--accent-weak);
+}
+.chatName { font: 600 14px/1.25 var(--font-head); color: var(--text); }
+.chatMeta { font-size: 11px; color: var(--text-muted-2); margin-top: 2px; }
+
 .nav {
   margin-top: auto;
   padding: var(--sp-5) var(--sp-6);

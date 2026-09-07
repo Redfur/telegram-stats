@@ -23,9 +23,14 @@ const STEPS: { n: string; text: ReactNode }[] = [
   },
 ];
 
-// Первый запуск — макет «Экраны приложения» опция 3b. Единственное честное
-// состояние Библиотеки, пока Фаза 1 (импорт/парсер) не построена.
-export function LibraryEmptyState() {
+interface LibraryEmptyStateProps {
+  onPickFile: () => void;
+  isImporting?: boolean;
+  error?: string | null;
+}
+
+// Первый запуск — макет «Экраны приложения» опция 3b.
+export function LibraryEmptyState({ onPickFile, isImporting, error }: LibraryEmptyStateProps) {
   return (
     <div className={styles.wrap}>
       <div className={styles.intro}>
@@ -47,7 +52,7 @@ export function LibraryEmptyState() {
         <div className={styles.footnote}>Большая история выгружается в Telegram несколько минут — это нормально.</div>
       </div>
       <div className={styles.dropzoneCol}>
-        <ImportDropzone />
+        <ImportDropzone onPickFile={onPickFile} isImporting={isImporting} error={error} />
       </div>
     </div>
   );

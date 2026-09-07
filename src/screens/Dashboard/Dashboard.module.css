@@ -1,0 +1,49 @@
+.wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-9);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-5);
+}
+
+.caveat {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-left: auto;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-6);
+}
+
+.empty {
+  padding: var(--sp-6);
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.ratio {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.ratioRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  padding: var(--sp-3) 0;
+  border-bottom: var(--border-w) solid var(--border-soft);
+}

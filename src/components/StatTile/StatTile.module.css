@@ -1,0 +1,3 @@
+.tile { justify-content: space-between; }
+.value { font: 600 34px/1.05 var(--font-head); }
+.caption { font-size: 11px; color: var(--text-muted); }

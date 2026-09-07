@@ -2,13 +2,14 @@ import styles from "./ComingSoon.module.css";
 
 interface ComingSoonProps {
   title: string;
+  message?: string;
 }
 
-export function ComingSoon({ title }: ComingSoonProps) {
+export function ComingSoon({ title, message = "Экран появится в следующей фазе" }: ComingSoonProps) {
   return (
     <div className={styles.wrap}>
       <span className="kick">{title}</span>
-      <h2 className={styles.heading}>Экран появится в следующей фазе</h2>
+      <h2 className={styles.heading}>{message}</h2>
     </div>
   );
 }

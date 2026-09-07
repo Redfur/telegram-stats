@@ -3,11 +3,13 @@ import styles from "./ImportDropzone.module.css";
 
 interface ImportDropzoneProps {
   onPickFile?: () => void;
+  isImporting?: boolean;
+  error?: string | null;
 }
 
-// Только визуальная часть — открытие файлового диалога и сам импорт
-// (Tauri-команда, стриминговый парсер) относятся к Фазе 1.
-export function ImportDropzone({ onPickFile }: ImportDropzoneProps) {
+// Только визуальная часть — открытие файлового диалога и запись через
+// Tauri-команду `import_chat` живут в src/hooks/useImportChat.ts.
+export function ImportDropzone({ onPickFile, isImporting, error }: ImportDropzoneProps) {
   return (
     <div className={styles.dropzone}>
       <CornerMarks />
@@ -19,11 +21,12 @@ export function ImportDropzone({ onPickFile }: ImportDropzoneProps) {
         </svg>
       </div>
       <div className={styles.text}>
-        <div className={styles.heading}>Перетащите result.json</div>
-        <div className={styles.sub}>или папку с выгрузкой · до 8 ГБ</div>
+        <div className={styles.heading}>{isImporting ? "Импортируется…" : "Перетащите result.json"}</div>
+        {!isImporting && <div className={styles.sub}>или папку с выгрузкой · до 8 ГБ</div>}
+        {error && <div className={styles.error}>{error}</div>}
       </div>
-      <Button variant="primary" onClick={onPickFile}>
-        Выбрать файл
+      <Button variant="primary" onClick={onPickFile} disabled={isImporting}>
+        {isImporting ? "Импортируется…" : "Выбрать файл"}
       </Button>
     </div>
   );
