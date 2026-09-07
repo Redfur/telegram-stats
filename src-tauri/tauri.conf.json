@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "telegram-stats",
-        "width": 800,
-        "height": 600
+        "title": "TG / Archive",
+        "width": 1180,
+        "height": 760
       }
     ],
     "security": {

@@ -1,5 +1,6 @@
 export { Button } from "./Button/Button";
 export { Card, CardKicker } from "./Card/Card";
+export { CornerMarks } from "./CornerMarks/CornerMarks";
 export { Input, InputLabel } from "./Input/Input";
 export { Segmented } from "./Segmented/Segmented";
 export { Tag } from "./Tag/Tag";

@@ -1,0 +1,42 @@
+.rail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.brand {
+  padding: var(--sp-6) var(--sp-6) var(--sp-4);
+  font: 600 16px/1 var(--font-head);
+}
+
+.chatsHeader {
+  padding: 0 var(--sp-6) var(--sp-3);
+}
+
+.empty {
+  padding: 0 var(--sp-6);
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+
+.nav {
+  margin-top: auto;
+  padding: var(--sp-5) var(--sp-6);
+  border-top: var(--border-w) solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.navItem {
+  all: unset;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--font-body);
+  color: var(--text-muted);
+}
+.navItem:hover { color: var(--text); }
+.navItem:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.active { color: var(--accent); }
