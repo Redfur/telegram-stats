@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{Emitter, Manager};
 
-use db::{ChatSummary, CountingReader, Db, ImportContext, ImportProgress};
+use db::{ChatSummary, CountingReader, Db, ImportContext, ImportProgress, PersonRow};
 use import::ImportError;
 use metrics::{ActivitySeries, ChatTotals, TopParticipants};
 
@@ -111,6 +111,40 @@ fn delete_chat(db: tauri::State<'_, Db>, chat_id: i64) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_people(db: tauri::State<'_, Db>, chat_id: i64) -> Result<Vec<PersonRow>, String> {
+    let conn = db.0.lock().map_err(|_| "database lock poisoned".to_string())?;
+    db::get_people(&conn, chat_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn merge_people(
+    db: tauri::State<'_, Db>,
+    chat_id: i64,
+    primary_id: i64,
+    other_ids: Vec<i64>,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|_| "database lock poisoned".to_string())?;
+    db::merge_people(&conn, chat_id, primary_id, &other_ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn hide_person(db: tauri::State<'_, Db>, chat_id: i64, person_id: i64, hidden: bool) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|_| "database lock poisoned".to_string())?;
+    db::hide_person(&conn, chat_id, person_id, hidden).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rename_person(
+    db: tauri::State<'_, Db>,
+    chat_id: i64,
+    person_id: i64,
+    display_name: String,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|_| "database lock poisoned".to_string())?;
+    db::rename_person(&conn, chat_id, person_id, &display_name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_chat_totals(db: tauri::State<'_, Db>, chat_id: i64) -> Result<Option<ChatTotals>, String> {
     let conn =
         db.0.lock()
@@ -155,6 +189,10 @@ pub fn run() {
             cancel_import,
             list_chats,
             delete_chat,
+            get_people,
+            merge_people,
+            hide_person,
+            rename_person,
             get_chat_totals,
             get_activity_series,
             get_top_participants,

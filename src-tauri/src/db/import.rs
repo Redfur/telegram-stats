@@ -21,6 +21,9 @@ fn db_err(e: rusqlite::Error) -> ImportError {
     ImportError::Sink(e.to_string())
 }
 
+/// person_id → отображаемое имя → (первое, последнее) время встречи.
+type AliasSeen = HashMap<i64, HashMap<String, (Option<i64>, Option<i64>)>>;
+
 /// Read-обёртка, считающая прочитанные байты в общий счётчик — честный
 /// процент прогресса по объёму файла, без второго прохода только ради
 /// подсчёта сообщений (второй проход противоречил бы цели «импорт 1M <
@@ -128,6 +131,10 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
     let mut chat_id = tx.last_insert_rowid();
 
     let mut people_cache: HashMap<String, i64> = HashMap::new();
+    // person_id → отображаемое имя → (первое, последнее) время встречи
+    // этого имени. Буфер по числу уникальных пар (человек, имя), не по
+    // числу сообщений — тот же принцип, что и у `people_cache`.
+    let mut alias_seen: AliasSeen = HashMap::new();
     let mut message_count: i64 = 0;
     let mut min_ts: Option<i64> = None;
     let mut max_ts: Option<i64> = None;
@@ -149,17 +156,22 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                 return Ok(()); // service/unrecognized — не персистятся в MVP
             };
 
+            let mut alias_pid_name: Option<(i64, String)> = None;
             let person_id = match m.from.as_ref() {
-                Some(p) => Some(
-                    resolve_person(
+                Some(p) => {
+                    let pid = resolve_person(
                         &tx,
                         &mut people_cache,
                         chat_id,
                         &p.id,
                         p.display_name.as_deref(),
                     )
-                    .map_err(db_err)?,
-                ),
+                    .map_err(db_err)?;
+                    if let Some(name) = p.display_name.clone() {
+                        alias_pid_name = Some((pid, name));
+                    }
+                    Some(pid)
+                }
                 None => None,
             };
             let text_len = m.text.plain.chars().count() as i64;
@@ -181,6 +193,13 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                 min_ts = Some(min_ts.map_or(ts, |cur| cur.min(ts)));
                 max_ts = Some(max_ts.map_or(ts, |cur| cur.max(ts)));
             }
+            if let Some((pid, name)) = alias_pid_name {
+                let entry = alias_seen.entry(pid).or_default().entry(name).or_insert((None, None));
+                if let Some(ts) = m.date_unixtime {
+                    entry.0 = Some(entry.0.map_or(ts, |cur| cur.min(ts)));
+                    entry.1 = Some(entry.1.map_or(ts, |cur| cur.max(ts)));
+                }
+            }
 
             (ctx.on_progress)(ImportProgress {
                 bytes_read: ctx.bytes_read.load(Ordering::Relaxed),
@@ -192,6 +211,24 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
             Ok(())
         })?
     };
+
+    {
+        let mut insert_alias = tx
+            .prepare(
+                "INSERT INTO aliases (person_id, name, first_seen, last_seen) VALUES (?1, ?2, ?3, ?4) \
+                 ON CONFLICT(person_id, name) DO UPDATE SET \
+                   first_seen = MIN(COALESCE(first_seen, excluded.first_seen), COALESCE(excluded.first_seen, first_seen)), \
+                   last_seen  = MAX(COALESCE(last_seen,  excluded.last_seen),  COALESCE(excluded.last_seen,  last_seen))",
+            )
+            .map_err(db_err)?;
+        for (pid, names) in &alias_seen {
+            for (name, (first, last)) in names {
+                insert_alias
+                    .execute(params![pid, name, first, last])
+                    .map_err(db_err)?;
+            }
+        }
+    }
 
     if let Some(tg_chat_id) = meta.tg_chat_id {
         let existing: Option<i64> = tx
@@ -208,15 +245,85 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
             // него, а не наоборот, чтобы этот id пережил повторный импорт.
             tx.execute("DELETE FROM messages WHERE chat_id = ?1", params![old_id])
                 .map_err(db_err)?;
-            tx.execute("DELETE FROM people WHERE chat_id = ?1", params![old_id])
-                .map_err(db_err)?;
+
+            // people, в отличие от messages, не стираем и не перезаливаем
+            // временные строки — merged_into/is_hidden/алиасы старых строк
+            // должны пережить повторный импорт (иначе любая ручная разметка
+            // участников терялась бы на следующей выгрузке того же чата).
+            // Сопоставляем по tg_person_id: если у старого чата уже есть
+            // такой человек — его строка выигрывает (id/merged_into/
+            // is_hidden сохраняются, обновляется только имя), временная
+            // удаляется; если человек новый — просто перевешиваем временную
+            // строку на старый chat_id, как и раньше.
+            let new_people: Vec<(i64, String, Option<String>)> = {
+                let mut stmt = tx
+                    .prepare("SELECT id, tg_person_id, display_name FROM people WHERE chat_id = ?1")
+                    .map_err(db_err)?;
+                let rows = stmt
+                    .query_map(params![chat_id], |row| {
+                        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                    })
+                    .map_err(db_err)?;
+                let collected: rusqlite::Result<Vec<_>> = rows.collect();
+                collected.map_err(db_err)?
+            };
+
+            for (new_person_id, tg_person_id, display_name) in new_people {
+                let matched_old: Option<i64> = tx
+                    .query_row(
+                        "SELECT id FROM people WHERE chat_id = ?1 AND tg_person_id = ?2",
+                        params![old_id, tg_person_id],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(db_err)?;
+
+                if let Some(old_person_id) = matched_old {
+                    // Старая строка сама могла быть объединена в кого-то
+                    // ещё до этого повторного импорта (merge_people, макет
+                    // 3d) — новые сообщения должны сразу попасть на
+                    // конечного «главного» участника, а не осесть на
+                    // объединённой строке, где их не увидит ни одна
+                    // метрика (WHERE merged_into IS NULL).
+                    let merged_into: Option<i64> = tx
+                        .query_row(
+                            "SELECT merged_into FROM people WHERE id = ?1",
+                            params![old_person_id],
+                            |row| row.get(0),
+                        )
+                        .map_err(db_err)?;
+                    let target_id = merged_into.unwrap_or(old_person_id);
+
+                    tx.execute(
+                        "UPDATE people SET display_name = ?1 WHERE id = ?2",
+                        params![display_name, old_person_id],
+                    )
+                    .map_err(db_err)?;
+                    tx.execute(
+                        "UPDATE messages SET person_id = ?1 WHERE person_id = ?2",
+                        params![target_id, new_person_id],
+                    )
+                    .map_err(db_err)?;
+                    tx.execute(
+                        "UPDATE OR IGNORE aliases SET person_id = ?1 WHERE person_id = ?2",
+                        params![target_id, new_person_id],
+                    )
+                    .map_err(db_err)?;
+                    // ON DELETE CASCADE подчистит алиасы временной строки,
+                    // которые не смогли перевеситься из-за конфликта UNIQUE.
+                    tx.execute("DELETE FROM people WHERE id = ?1", params![new_person_id])
+                        .map_err(db_err)?;
+                } else {
+                    tx.execute(
+                        "UPDATE people SET chat_id = ?1 WHERE id = ?2",
+                        params![old_id, new_person_id],
+                    )
+                    .map_err(db_err)?;
+                }
+            }
+
             tx.execute(
                 "UPDATE messages SET chat_id = ?1 WHERE chat_id = ?2",
-                params![old_id, chat_id],
-            )
-            .map_err(db_err)?;
-            tx.execute(
-                "UPDATE people SET chat_id = ?1 WHERE chat_id = ?2",
                 params![old_id, chat_id],
             )
             .map_err(db_err)?;

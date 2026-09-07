@@ -12,12 +12,17 @@ pub struct ChatTotals {
     pub last_msg_ts: Option<i64>,
 }
 
-/// Сводка чата — сообщений/слов/символов/период. Счётчики читаются из
-/// денормализованных колонок `chats` (без сканирования), слова/символы —
-/// одним `SUM` по `messages`.
+/// Сводка чата — сообщений/слов/символов/период. `message_count` читается
+/// из денормализованной колонки `chats` (без сканирования), слова/символы
+/// — одним `SUM` по `messages`. `participant_count` — вживую по `people`
+/// (не денормализованная колонка `chats`, которая — просто снимок на
+/// момент импорта и не отражает merge/hide из разбора участников, макет
+/// 3d): дёшево при реалистичном числе участников, всегда согласовано.
 pub fn get_chat_totals(conn: &Connection, chat_id: i64) -> rusqlite::Result<Option<ChatTotals>> {
     conn.query_row(
-        "SELECT c.message_count, c.participant_count, c.first_msg_ts, c.last_msg_ts, \
+        "SELECT c.message_count, \
+                (SELECT COUNT(*) FROM people p WHERE p.chat_id = c.id AND p.merged_into IS NULL AND p.is_hidden = 0), \
+                c.first_msg_ts, c.last_msg_ts, \
                 COALESCE(SUM(m.word_count), 0), COALESCE(SUM(m.text_len), 0) \
          FROM chats c LEFT JOIN messages m ON m.chat_id = c.id \
          WHERE c.id = ?1 \
@@ -107,19 +112,19 @@ pub struct TopParticipants {
 }
 
 pub fn get_top_participants(conn: &Connection, chat_id: i64) -> rusqlite::Result<TopParticipants> {
-    let participant_count: i64 = conn
-        .query_row(
-            "SELECT participant_count FROM chats WHERE id = ?1",
-            params![chat_id],
-            |row| row.get(0),
-        )
-        .optional()?
-        .unwrap_or(0);
+    // Вживую, не из денормализованной chats.participant_count — та не
+    // видит merge/hide из разбора участников (макет 3d).
+    let participant_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM people WHERE chat_id = ?1 AND merged_into IS NULL AND is_hidden = 0",
+        params![chat_id],
+        |row| row.get(0),
+    )?;
 
     let mut stmt = conn.prepare(
         "SELECT p.id, p.display_name, COUNT(*) mc, AVG(m.text_len) \
          FROM messages m JOIN people p ON p.id = m.person_id \
-         WHERE m.chat_id = ?1 GROUP BY p.id ORDER BY mc DESC",
+         WHERE m.chat_id = ?1 AND p.merged_into IS NULL AND p.is_hidden = 0 \
+         GROUP BY p.id ORDER BY mc DESC",
     )?;
     let participants = stmt
         .query_map(params![chat_id], |row| {

@@ -7,6 +7,12 @@ use telegram_stats_lib::db::{self, import_into_db, ImportContext};
 use telegram_stats_lib::import::{parse_export, ImportError, ParsedEvent};
 use telegram_stats_lib::metrics::{get_top_participants, granularity::pick_granularity};
 
+fn people_ordered_by_name(conn: &Connection, chat_id: i64) -> Vec<db::PersonRow> {
+    let mut people = db::get_people(conn, chat_id).unwrap();
+    people.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+    people
+}
+
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -23,6 +29,10 @@ fn fresh_db() -> Connection {
         "../src/db/migrations/0002_chat_source_size.sql"
     ))
     .expect("apply migration 0002");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0003_people_aliases.sql"
+    ))
+    .expect("apply migration 0003");
     conn
 }
 
@@ -217,4 +227,110 @@ fn cancelling_mid_import_leaves_no_trace() {
         db::list_chats(&conn).unwrap().is_empty(),
         "a cancelled import must not commit a partial chat"
     );
+}
+
+#[test]
+fn merging_people_moves_messages_and_drops_the_duplicate_row() {
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "three_day_chat.json");
+    let people = people_ordered_by_name(&conn, chat.id);
+    assert_eq!(people.len(), 3, "fixture has 3 distinct participants");
+
+    let primary = &people[0];
+    let duplicate = &people[1];
+    let primary_before = primary.message_count;
+    let duplicate_before = duplicate.message_count;
+
+    db::merge_people(&conn, chat.id, primary.id, &[duplicate.id]).unwrap();
+
+    let after = people_ordered_by_name(&conn, chat.id);
+    assert_eq!(after.len(), 2, "the merged person must no longer appear");
+    let merged_primary = after.iter().find(|p| p.id == primary.id).unwrap();
+    assert_eq!(merged_primary.message_count, primary_before + duplicate_before);
+
+    let top = get_top_participants(&conn, chat.id).unwrap();
+    assert!(
+        top.participants.iter().all(|p| p.person_id != duplicate.id),
+        "metrics must not surface a merged-away person"
+    );
+}
+
+#[test]
+fn merge_and_hide_survive_a_reimport_of_the_same_chat() {
+    let mut conn = fresh_db();
+    let first = import(&mut conn, "three_day_chat.json");
+    let people = people_ordered_by_name(&conn, first.id);
+    let (primary, duplicate, hidden_one) = (&people[0], &people[1], &people[2]);
+    let combined_before_reimport = primary.message_count + duplicate.message_count;
+
+    db::merge_people(&conn, first.id, primary.id, &[duplicate.id]).unwrap();
+    db::hide_person(&conn, first.id, hidden_one.id, true).unwrap();
+
+    let visible_before_reimport = people_ordered_by_name(&conn, first.id);
+    assert_eq!(
+        visible_before_reimport.len(),
+        2,
+        "get_people drops merged-away rows but still lists hidden ones (hidden is a display flag, not a merge)"
+    );
+
+    let second = import(&mut conn, "three_day_chat.json");
+    assert_eq!(second.id, first.id);
+
+    // Объединённая строка не должна воскреснуть как отдельный участник,
+    // а скрытая должна остаться скрытой — иначе повторная выгрузка того
+    // же чата тихо стирает ручную разметку из шага разбора участников.
+    let visible_after_reimport = people_ordered_by_name(&conn, second.id);
+    assert_eq!(
+        visible_after_reimport.len(),
+        2,
+        "merge must survive re-import: the duplicate must not come back as a new row"
+    );
+    // Сообщения при повторном импорте не накапливаются, а заменяются
+    // (тот же принцип, что и в reimporting_the_same_chat_updates_instead_of_duplicating) —
+    // поэтому ожидаем тот же общий счёт, что и до реимпорта, а не удвоенный.
+    let primary_after = visible_after_reimport.iter().find(|p| p.id == primary.id).unwrap();
+    assert_eq!(
+        primary_after.message_count, combined_before_reimport,
+        "re-imported messages for the merged-away duplicate must land on the primary, not vanish from every metric"
+    );
+
+    let totals = get_top_participants(&conn, second.id).unwrap();
+    assert!(
+        totals.participants.iter().all(|p| p.person_id != hidden_one.id),
+        "a hidden participant must stay hidden after re-import"
+    );
+}
+
+#[test]
+fn aliases_accumulate_distinct_display_names_for_the_same_person() {
+    let mut conn = fresh_db();
+    let bytes_read = AtomicU64::new(0);
+    let cancel = AtomicBool::new(false);
+    let mut ctx = ImportContext {
+        bytes_read: &bytes_read,
+        on_progress: |_| {},
+        cancel: &cancel,
+    };
+
+    let export = br#"{
+        "name": "Test", "type": "private_group", "id": 1,
+        "messages": [
+            {"type": "message", "id": 1, "date_unixtime": "1000", "from": "Old Name", "from_id": "user1", "text": "hi"},
+            {"type": "message", "id": 2, "date_unixtime": "2000", "from": "New Name", "from_id": "user1", "text": "hi again"}
+        ]
+    }"#;
+    let chat = import_into_db(
+        &mut conn,
+        std::io::Cursor::new(export.to_vec()),
+        "aliases.json",
+        None,
+        &mut ctx,
+    )
+    .expect("import should succeed");
+
+    let people = db::get_people(&conn, chat.id).unwrap();
+    assert_eq!(people.len(), 1);
+    let mut aliases = people[0].aliases.clone();
+    aliases.sort();
+    assert_eq!(aliases, vec!["New Name".to_string(), "Old Name".to_string()]);
 }

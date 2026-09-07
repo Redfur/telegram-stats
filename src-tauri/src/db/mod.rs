@@ -1,6 +1,8 @@
 mod import;
+mod people;
 
 pub use import::{import_into_db, CountingReader, ImportContext, ImportProgress};
+pub use people::{get_people, hide_person, merge_people, rename_person, PersonRow};
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -43,15 +45,22 @@ pub fn open_and_migrate(path: &Path) -> rusqlite::Result<Connection> {
         conn.execute_batch(include_str!("migrations/0002_chat_source_size.sql"))?;
         conn.pragma_update(None, "user_version", 2)?;
     }
+    if version < 3 {
+        conn.execute_batch(include_str!("migrations/0003_people_aliases.sql"))?;
+        conn.pragma_update(None, "user_version", 3)?;
+    }
 
     Ok(conn)
 }
 
+/// `participant_count` — вживую по `people` (не денормализованная
+/// колонка, которая не видит merge/hide из разбора участников, макет 3d).
 pub fn list_chats(conn: &Connection) -> rusqlite::Result<Vec<ChatSummary>> {
     let mut stmt = conn.prepare(
-        "SELECT id, tg_chat_id, name, chat_type, message_count, participant_count, \
-         first_msg_ts, last_msg_ts, imported_at, source_file_size \
-         FROM chats ORDER BY imported_at DESC",
+        "SELECT c.id, c.tg_chat_id, c.name, c.chat_type, c.message_count, \
+                (SELECT COUNT(*) FROM people p WHERE p.chat_id = c.id AND p.merged_into IS NULL AND p.is_hidden = 0), \
+                c.first_msg_ts, c.last_msg_ts, c.imported_at, c.source_file_size \
+         FROM chats c ORDER BY c.imported_at DESC",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(ChatSummary {
