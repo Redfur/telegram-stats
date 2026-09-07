@@ -5,6 +5,7 @@ import { LibraryEmptyState } from "./screens/Library/LibraryEmptyState";
 import { Library } from "./screens/Library/Library";
 import { ComingSoon } from "./screens/ComingSoon/ComingSoon";
 import { Dashboard } from "./screens/Dashboard/Dashboard";
+import { Participants } from "./screens/Participants/Participants";
 import { useChats } from "./hooks/useChats";
 import { useImportChat } from "./hooks/useImportChat";
 import { useDeleteChat } from "./hooks/useDeleteChat";
@@ -12,8 +13,7 @@ import { usePeopleReview } from "./hooks/usePeopleReview";
 import { ImportFlowOverlay } from "./components/ImportFlow/ImportFlowOverlay";
 import { ParticipantReviewStep } from "./components/ImportFlow/ParticipantReviewStep";
 
-const STUB_TITLES: Record<Exclude<NavTarget, "library">, string> = {
-  people: "Участники",
+const STUB_TITLES: Record<Exclude<NavTarget, "library" | "people">, string> = {
   import: "Импорт",
   slides: "Слайды",
 };
@@ -40,12 +40,22 @@ function App() {
   const { people, merge, hide, rename } = usePeopleReview(reviewChatId);
 
   function handleNavigate(target: NavTarget) {
-    setOpenChatId(null);
+    // «Участники» — экран для уже открытого чата (макет 3d/3e: чат в
+    // рельсе и пункт нава подсвечены одновременно), закрывать чат при
+    // переходе на него не нужно. Остальные пункты — самостоятельные
+    // экраны, чат для них закрывается.
+    if (target !== "people") {
+      setOpenChatId(null);
+    }
     setActiveNav(target);
   }
 
   function handleSelectChat(id: number) {
     setOpenChatId(id);
+    // Клик по чату в рельсе всегда открывает его дашборд, даже если
+    // до этого был открыт экран «Участники» — так остаётся понятный
+    // путь назад к дашборду (повторный клик по тому же чату).
+    setActiveNav("library");
   }
 
   async function handleDeleteChat(id: number) {
@@ -60,8 +70,12 @@ function App() {
     setReviewChatId(null);
   }
 
+  const openChat = openChatId != null ? chats.find((c) => c.id === openChatId) ?? null : null;
+
   let mainContent: ReactNode;
-  if (openChatId != null) {
+  if (activeNav === "people" && openChatId != null) {
+    mainContent = <Participants chatId={openChatId} chatName={openChat?.name ?? null} />;
+  } else if (openChatId != null) {
     mainContent = <Dashboard chatId={openChatId} />;
   } else if (activeNav === "library") {
     mainContent =
@@ -77,6 +91,8 @@ function App() {
       ) : (
         <LibraryEmptyState onPickFile={importFile} isImporting={isImporting} error={error?.message ?? null} />
       );
+  } else if (activeNav === "people") {
+    mainContent = <ComingSoon title="Участники" message="Выберите чат слева, чтобы посмотреть участников" />;
   } else {
     mainContent = <ComingSoon title={STUB_TITLES[activeNav]} />;
   }

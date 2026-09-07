@@ -1,0 +1,26 @@
+.wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.headRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  padding: var(--sp-6) var(--sp-8);
+  border-bottom: var(--border-w) solid var(--border-soft);
+}
+
+.title {
+  margin: 0;
+  font: 600 20px/1.2 var(--font-head), sans-serif;
+  color: var(--text);
+}
+
+.summary {
+  font-size: 11px;
+  color: var(--text-muted-2);
+  margin-top: 2px;
+}

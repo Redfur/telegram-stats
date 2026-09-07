@@ -1,0 +1,74 @@
+.wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  padding: var(--sp-4) var(--sp-8);
+  border-bottom: var(--border-w) solid var(--border-soft);
+}
+
+.search {
+  width: 220px;
+  margin-left: auto;
+}
+
+.actionBar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-8);
+  background: var(--accent-weak);
+  border-bottom: var(--border-w) solid var(--border-soft);
+}
+
+.selectedCount {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.renameInput {
+  flex: 1;
+  max-width: 260px;
+  background: var(--surface-raised);
+  border: var(--border-w) solid var(--border);
+  color: var(--text);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: 13px;
+}
+
+.tableWrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--sp-8);
+}
+
+.aliases {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.hiddenName {
+  color: var(--text-faint);
+}
+
+.hiddenTag {
+  margin-left: var(--sp-3);
+  font-size: 10px;
+  color: var(--text-faint);
+  border: var(--border-w) solid var(--border-soft);
+  padding: 1px 6px;
+}
+
+.footer {
+  padding: var(--sp-5) var(--sp-8);
+  border-top: var(--border-w) solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--text-muted-2);
+}

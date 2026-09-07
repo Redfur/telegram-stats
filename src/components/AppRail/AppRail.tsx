@@ -46,19 +46,24 @@ export function AppRail({ activeNav, onNavigate, chats, activeChatId, onSelectCh
         </div>
       )}
       <nav className={styles.nav}>
-        {NAV_ITEMS.map((item) => (
-          <button
-            key={item.target}
-            type="button"
-            className={[styles.navItem, item.target === activeNav && activeChatId == null ? styles.active : ""]
-              .filter(Boolean)
-              .join(" ")}
-            aria-current={item.target === activeNav && activeChatId == null ? "page" : undefined}
-            onClick={() => onNavigate(item.target)}
-          >
-            {item.label}
-          </button>
-        ))}
+        {NAV_ITEMS.map((item) => {
+          // «Участники» — единственный пункт, который остаётся активным
+          // вместе с открытым чатом (макет 3d/3e: чат в списке и пункт
+          // нава подсвечены одновременно). Остальные — самостоятельные
+          // экраны, открытый чат их подсветку гасит.
+          const isActive = item.target === activeNav && (item.target === "people" || activeChatId == null);
+          return (
+            <button
+              key={item.target}
+              type="button"
+              className={[styles.navItem, isActive ? styles.active : ""].filter(Boolean).join(" ")}
+              aria-current={isActive ? "page" : undefined}
+              onClick={() => onNavigate(item.target)}
+            >
+              {item.label}
+            </button>
+          );
+        })}
       </nav>
     </div>
   );
