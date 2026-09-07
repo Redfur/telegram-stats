@@ -69,10 +69,10 @@ Rust отформатирован `cargo fmt`.
 не сломать формат канваса. Барлоу/Барлоу-Кондесед из макета заменены на
 Oswald/Manrope (и там, и в коде) — у Барлоу нет кириллицы. Фаза 0 закрыта:
 каркас собран (`AppShell` + `AppRail`, `src/components/`), `App.tsx` —
-теперь хост реальных экранов. Единственный реальный экран пока —
-Библиотека в состоянии первого запуска (`src/screens/Library/`, макет 3b);
-остальные три пункта нава ведут на общую заглушку `ComingSoon`. Список
-чатов в рельсе появится в Фазе 2 вместе с реальным импортом.
+теперь хост реальных экранов. Библиотека реализована целиком (макет 3a —
+`src/screens/Library/Library.tsx` + `LibraryCard`, макет 3b —
+`LibraryEmptyState` для пустого состояния); Участники/Импорт/Слайды пока
+ведут на общую заглушку `ComingSoon`.
 
 `src-tauri/src/import/` — стриминговый парсер `result.json`
 (`parse_export()`, кастомный `Visitor` поверх `serde_json`, без
@@ -83,17 +83,22 @@ Oswald/Manrope (и там, и в коде) — у Барлоу нет кирил
 рабочий путь импорт → SQLite → дашборд, но в урезанном объёме каждой
 затронутой фазы — сперва весь путь целиком, остальные метрики и экраны
 добираются инкрементально. `src-tauri/src/db/` — минимальная схема
-(`chats`/`people`/`messages`, миграция `0001` через ручной
+(`chats`/`people`/`messages`, миграции `0001`+`0002` через ручной
 `PRAGMA user_version`, без `aliases`/`reactions`/`links`/`tokens` и без
-строк для сервисных событий — ни одна метрика их пока не читает),
-Tauri-команды (`import_chat`, `list_chats`, `get_chat_totals`,
-`get_activity_series`, `get_top_participants`), диалог выбора файла
-(`@tauri-apps/plugin-dialog`). `src-tauri/src/metrics/granularity.rs` —
-чистая функция выбора гранулярности по SPEC §7, переиспользуемая любой
-будущей time-series метрикой. 22 Rust-теста зелёные, `cargo clippy` чист.
-Полный `ingest://progress`/ETA/отмена, полная Библиотека (макет 3a),
-слияние участников и остальные метрики из SPEC §9 — сознательно не в
-этом срезе, см. `docs/PLAN.md`.
+строк для сервисных событий — ни одна метрика их пока не читает;
+`0002` добавляет `chats.source_file_size`, известный из `fs::metadata`
+на файл экспорта, для честного агрегата в шапке Библиотеки),
+Tauri-команды (`import_chat`, `list_chats`, `delete_chat`,
+`get_chat_totals`, `get_activity_series`, `get_top_participants`),
+диалог выбора файла (`@tauri-apps/plugin-dialog`). `delete_chat` полагается
+на `ON DELETE CASCADE` в схеме — удаляет строку `chats`, `messages`/
+`people` уходят сами. `src-tauri/src/metrics/granularity.rs` — чистая
+функция выбора гранулярности по SPEC §7, переиспользуемая любой будущей
+time-series метрикой. 24 Rust-теста зелёные, `cargo clippy` чист.
+Полный `ingest://progress`/ETA/отмена (карточка «импортируется» в
+Библиотеке, параллельные импорты), явный выбор при конфликте
+`tg_chat_id` без `id` в старом экспорте, слияние участников и остальные
+метрики из SPEC §9 — сознательно не в этом срезе, см. `docs/PLAN.md`.
 
 `tauri.conf.json` имеет `security.csp: null` (нужно будет задать CSP по
 требованию из §4 `docs/SPEC.md`).
