@@ -1,7 +1,39 @@
+import { useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { Button, Card, CardKicker, DataTable, Segmented, Tag } from "./components/ui";
+
 // Временная витрина примитивов — проверка токенов, шрифтов и компонентов
 // перед тем, как поверх них строить настоящие экраны (см. docs/SPEC.md §10).
 // Заменяется первым реальным экраном (Библиотека).
+
+interface Row {
+  name: string;
+  messages: number;
+  tag: string;
+}
+
+const rows: Row[] = [
+  { name: "Паша", messages: 231004, tag: "группа" },
+  { name: "Deleted Account", messages: 20814, tag: "бот" },
+];
+
+const columns: ColumnDef<Row>[] = [
+  { header: "Отображаемое имя", accessorKey: "name" },
+  {
+    header: "Сообщений",
+    accessorKey: "messages",
+    cell: (info) => <span className="num">{info.getValue<number>().toLocaleString("ru-RU")}</span>,
+  },
+  {
+    header: "Метка",
+    accessorKey: "tag",
+    cell: (info) => <Tag variant={info.getValue() === "бот" ? "outline" : "accent"}>{info.getValue<string>()}</Tag>,
+  },
+];
+
 function App() {
+  const [period, setPeriod] = useState<"all" | "year" | "range">("all");
+
   return (
     <main style={{ padding: "34px 40px", display: "flex", flexDirection: "column", gap: "26px", maxWidth: 640 }}>
       <div>
@@ -13,61 +45,33 @@ function App() {
       </div>
 
       <section style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button className="btn btn-primary">Открыть</button>
-        <button className="btn btn-secondary">Обновить выгрузкой</button>
-        <button className="btn btn-ghost">Удалить</button>
-        <button className="btn btn-primary" disabled>
+        <Button variant="primary">Открыть</Button>
+        <Button variant="secondary">Обновить выгрузкой</Button>
+        <Button variant="ghost">Удалить</Button>
+        <Button variant="primary" disabled>
           Недоступно
-        </button>
+        </Button>
       </section>
 
-      <section className="card">
-        <i className="corner tl" />
-        <i className="corner tr" />
-        <i className="corner bl" />
-        <i className="corner br" />
-        <span className="card-kicker">Рекорд дня</span>
+      <Card>
+        <CardKicker>Рекорд дня</CardKicker>
         <div className="num" style={{ font: "600 46px/.95 var(--font-head)" }}>
           4 312
         </div>
         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>14 июня 2018 · ×9 к медиане</div>
-      </section>
+      </Card>
 
-      <section className="seg" style={{ width: "fit-content" }}>
-        <span className="seg-opt on">Всё время</span>
-        <span className="seg-opt">Год</span>
-        <span className="seg-opt">Интервал…</span>
-      </section>
+      <Segmented
+        options={[
+          { value: "all", label: "Всё время" },
+          { value: "year", label: "Год" },
+          { value: "range", label: "Интервал…" },
+        ]}
+        value={period}
+        onChange={setPeriod}
+      />
 
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Отображаемое имя</th>
-            <th style={{ textAlign: "right" }}>Сообщений</th>
-            <th>Метка</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Паша</td>
-            <td className="num" style={{ textAlign: "right" }}>
-              231 004
-            </td>
-            <td>
-              <span className="tag tag-accent">группа</span>
-            </td>
-          </tr>
-          <tr>
-            <td>Deleted Account</td>
-            <td className="num" style={{ textAlign: "right", color: "var(--text-faint)" }}>
-              20 814
-            </td>
-            <td>
-              <span className="tag tag-outline">бот</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <DataTable data={rows} columns={columns} />
     </main>
   );
 }

@@ -1,0 +1,11 @@
+.input {
+  width: 100%; min-height: 36px; padding: var(--sp-2) var(--sp-4);
+  font: 14px/1.3 var(--font-body); color: var(--text); caret-color: var(--accent);
+  background: var(--surface-raised); border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+}
+.input:hover { border-color: color-mix(in srgb, var(--text) 45%, transparent); }
+.input:focus-visible { border-color: var(--accent); outline-offset: 0; }
+.input:disabled { background: var(--ground); border-color: var(--border-soft); color: var(--text-faint); }
+
+.label { display: block; font-size: 12px; margin-bottom: 5px; color: var(--text-muted); }

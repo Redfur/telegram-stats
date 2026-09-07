@@ -1,0 +1,7 @@
+.tag {
+  display: inline-flex; align-items: center; font-size: 11px; letter-spacing: .02em;
+  padding: 3px 10px; border-radius: var(--radius);
+}
+.accent { background: var(--accent-weak); color: var(--accent-hover); }
+.neutral { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text-2); }
+.outline { border: var(--border-w) solid var(--accent); color: var(--accent); }

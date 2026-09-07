@@ -1,0 +1,7 @@
+.table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-family: var(--font-body); }
+.table th {
+  text-align: left; font: 600 10.5px/1 var(--font-head); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-faint); padding: 7px 8px; border-bottom: var(--border-w) solid var(--border);
+}
+.table td { padding: 7px 8px; border-bottom: var(--border-w) solid var(--border-soft); }
+.table tbody tr:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
