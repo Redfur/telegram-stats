@@ -5,7 +5,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use rusqlite::Connection;
 use telegram_stats_lib::db::{self, import_into_db, ImportContext};
 use telegram_stats_lib::import::{parse_export, ImportError, ParsedEvent};
-use telegram_stats_lib::metrics::{get_top_participants, granularity::pick_granularity};
+use telegram_stats_lib::metrics::{
+    get_message_type_detail, get_message_type_overview, get_top_participants,
+    granularity::pick_granularity, MessageTypeKind, MessageTypeSummaryStats, TypeTimeView,
+};
 
 fn people_ordered_by_name(conn: &Connection, chat_id: i64) -> Vec<db::PersonRow> {
     let mut people = db::get_people(conn, chat_id).unwrap();
@@ -33,6 +36,10 @@ fn fresh_db() -> Connection {
         "../src/db/migrations/0003_people_aliases.sql"
     ))
     .expect("apply migration 0003");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0004_message_types.sql"
+    ))
+    .expect("apply migration 0004");
     conn
 }
 
@@ -333,4 +340,179 @@ fn aliases_accumulate_distinct_display_names_for_the_same_person() {
     let mut aliases = people[0].aliases.clone();
     aliases.sort();
     assert_eq!(aliases, vec!["New Name".to_string(), "Old Name".to_string()]);
+}
+
+#[test]
+fn message_type_overview_counts_every_kind_in_english_chat() {
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "english_chat.json");
+
+    let overview = get_message_type_overview(&conn, chat.id).unwrap();
+    assert!(overview.available);
+    assert_eq!(overview.total_messages, chat.message_count);
+    assert_eq!(overview.counts.len(), MessageTypeKind::ALL.len());
+    // Фикстура специально устроена так, что у каждого из 12 типов ровно
+    // одно вхождение — легко проверить, что ни один не потерялся и не
+    // задвоился в другой категории (например файл vs документ-без-медиатипа).
+    for c in &overview.counts {
+        assert_eq!(c.count, 1, "kind {:?} should have exactly one match", c.kind);
+    }
+}
+
+#[test]
+fn message_type_detail_uses_duration_variant_for_voice_and_video_message() {
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "english_chat.json");
+
+    for kind in [MessageTypeKind::VoiceMessage, MessageTypeKind::VideoMessage] {
+        let detail = get_message_type_detail(&conn, chat.id, kind, None)
+            .unwrap()
+            .unwrap_or_else(|| panic!("{kind:?} should have a detail"));
+        assert!(
+            matches!(detail.summary, MessageTypeSummaryStats::Duration { .. }),
+            "{kind:?} must use the duration-stats variant, not frequency"
+        );
+    }
+}
+
+#[test]
+fn message_type_detail_uses_frequency_variant_for_everything_else() {
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "english_chat.json");
+
+    for kind in MessageTypeKind::ALL {
+        if matches!(kind, MessageTypeKind::VoiceMessage | MessageTypeKind::VideoMessage) {
+            continue;
+        }
+        let detail = get_message_type_detail(&conn, chat.id, kind, None)
+            .unwrap()
+            .unwrap_or_else(|| panic!("{kind:?} should have a detail"));
+        assert!(
+            matches!(detail.summary, MessageTypeSummaryStats::Frequency { .. }),
+            "{kind:?} must use the frequency-stats variant"
+        );
+    }
+}
+
+#[test]
+fn message_type_detail_is_none_for_a_kind_with_zero_occurrences() {
+    let mut conn = fresh_db();
+    // three_day_chat.json не содержит опросов вовсе.
+    let chat = import(&mut conn, "three_day_chat.json");
+
+    let detail = get_message_type_detail(&conn, chat.id, MessageTypeKind::Poll, None).unwrap();
+    assert!(detail.is_none(), "a kind with zero matches must return None, not an empty/zeroed detail");
+}
+
+#[test]
+fn short_chat_disables_month_view_and_degrades_the_peak() {
+    let mut conn = fresh_db();
+    // ~2 дня — короче MONTH_VIEW_MIN_SPAN_DAYS, "по месяцам" должно быть
+    // недоступно (docs/SPEC.md §7 — честная деградация, не пустой график).
+    let chat = import(&mut conn, "three_day_chat.json");
+
+    // ровно одно отредактированное сообщение в фикстуре — что бы то ни
+    // было, на одном бакете "пик" не может быть содержательным числом.
+    let detail = get_message_type_detail(&conn, chat.id, MessageTypeKind::Edited, None)
+        .unwrap()
+        .expect("fixture has exactly one edited message");
+
+    assert!(
+        !detail.views_available.contains(&TypeTimeView::Month),
+        "a ~2-day chat must not offer a month view"
+    );
+    assert_eq!(detail.selected_view, TypeTimeView::Day, "must fall back to the coarsest available view");
+    match detail.summary {
+        MessageTypeSummaryStats::Frequency { peak, .. } => {
+            assert!(peak.is_none(), "too few buckets for a meaningful peak — must degrade, not lie");
+        }
+        MessageTypeSummaryStats::Duration { .. } => panic!("edited is not duration-based"),
+    }
+}
+
+#[test]
+fn requesting_an_unavailable_view_falls_back_instead_of_erroring() {
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "three_day_chat.json");
+
+    // Явно просим "по месяцам" на чате, где он недоступен — не должно падать.
+    let detail = get_message_type_detail(&conn, chat.id, MessageTypeKind::Edited, Some(TypeTimeView::Month))
+        .unwrap()
+        .expect("fixture has exactly one edited message");
+    assert_eq!(detail.selected_view, TypeTimeView::Day);
+}
+
+#[test]
+fn chat_imported_before_the_message_types_migration_reports_unavailable() {
+    // Симулируем чат, импортированный до появления этой метрики: миграции
+    // 0001-0003 применены (и через них были вставлены messages/chats),
+    // 0004 применяется отдельно поверх уже существующих строк — ровно то,
+    // что происходит с реальной базой при апдейте приложения. Разница с
+    // fresh_db()+import(): здесь message_types_ready остаётся 0, потому
+    // что строка chats никогда не проходила через import_into_db после
+    // того, как эта колонка появилась.
+    let conn = Connection::open_in_memory().expect("open in-memory db");
+    conn.execute_batch(include_str!("../src/db/migrations/0001_init.sql"))
+        .expect("apply migration 0001");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0002_chat_source_size.sql"
+    ))
+    .expect("apply migration 0002");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0003_people_aliases.sql"
+    ))
+    .expect("apply migration 0003");
+
+    conn.execute(
+        "INSERT INTO chats (tg_chat_id, name, chat_type, imported_at, message_count, participant_count) \
+         VALUES (1, 'Old chat', 'private_group', 0, 5, 2)",
+        [],
+    )
+    .expect("insert pre-existing chat row");
+    let chat_id = conn.last_insert_rowid();
+
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0004_message_types.sql"
+    ))
+    .expect("apply migration 0004 on top of the pre-existing chat");
+
+    let overview = get_message_type_overview(&conn, chat_id).unwrap();
+    assert!(
+        !overview.available,
+        "a chat that never went through the updated importer must not report counts"
+    );
+    assert_eq!(
+        overview.total_messages, 5,
+        "still surfaces the chat's known message_count, just without a type breakdown"
+    );
+    assert!(overview.counts.is_empty());
+}
+
+#[test]
+fn message_type_metrics_never_panic_across_the_full_fixture_set() {
+    for fixture_name in [
+        "three_day_chat.json",
+        "group_50_members.json",
+        "no_reactions_old_export.json",
+        "personal_chat.json",
+        "english_chat.json",
+    ] {
+        let mut conn = fresh_db();
+        let chat = import(&mut conn, fixture_name);
+
+        let overview = get_message_type_overview(&conn, chat.id).unwrap();
+        assert!(overview.available, "{fixture_name}: freshly imported chats are always ready");
+
+        for kind in MessageTypeKind::ALL {
+            let detail = get_message_type_detail(&conn, chat.id, kind, None).unwrap();
+            if let Some(detail) = detail {
+                assert!(detail.total_count > 0, "{fixture_name}/{kind:?}: Some(..) implies a non-zero count");
+                for view in [TypeTimeView::Month, TypeTimeView::Day, TypeTimeView::HourOfDay] {
+                    // Явный запрос любого из трёх видов не должен падать,
+                    // даже если он недоступен для этого чата (тихий фолбэк).
+                    get_message_type_detail(&conn, chat.id, kind, Some(view)).unwrap();
+                }
+            }
+        }
+    }
 }

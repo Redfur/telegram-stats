@@ -155,6 +155,138 @@
       ],
       "forwarded_from": "Reading News Channel",
       "forwarded_from_id": "channel9876543210"
+    },
+    {
+      "id": 8,
+      "type": "message",
+      "date": "2025-01-01T00:07:00",
+      "date_unixtime": "1735690020",
+      "from": "Alice",
+      "from_id": "user000000300",
+      "text": "",
+      "text_entities": [],
+      "photo": "photos/photo_1@01-01-2025_00-07-00.jpg",
+      "photo_file_size": 184320,
+      "width": 1280,
+      "height": 960
+    },
+    {
+      "id": 9,
+      "type": "message",
+      "date": "2025-01-01T00:08:00",
+      "date_unixtime": "1735690080",
+      "from": "Carol",
+      "from_id": "user000000302",
+      "text": "",
+      "text_entities": [],
+      "media_type": "animation",
+      "file": "(File not included. Change data exporting settings to download.)",
+      "file_name": "cover-reveal.gif",
+      "file_size": 512044,
+      "mime_type": "video/mp4",
+      "width": 480,
+      "height": 480
+    },
+    {
+      "id": 10,
+      "type": "message",
+      "date": "2025-01-01T00:09:00",
+      "date_unixtime": "1735690140",
+      "from": "Bob",
+      "from_id": "user000000301",
+      "text": "",
+      "text_entities": [],
+      "media_type": "video_message",
+      "duration_seconds": 9,
+      "file": "(File not included. Change data exporting settings to download.)",
+      "file_size": 604112,
+      "mime_type": "video/mp4",
+      "width": 384,
+      "height": 384
+    },
+    {
+      "id": 11,
+      "type": "message",
+      "date": "2025-01-01T00:10:00",
+      "date_unixtime": "1735690200",
+      "from": "Alice",
+      "from_id": "user000000300",
+      "text": "Reading schedule attached",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "Reading schedule attached"
+        }
+      ],
+      "file": "(File not included. Change data exporting settings to download.)",
+      "file_name": "reading-schedule.pdf",
+      "file_size": 88213,
+      "mime_type": "application/pdf"
+    },
+    {
+      "id": 12,
+      "type": "message",
+      "date": "2025-01-01T00:11:00",
+      "date_unixtime": "1735690260",
+      "from": "Carol",
+      "from_id": "user000000302",
+      "text": "",
+      "text_entities": [],
+      "poll": {
+        "question": "Which book next?",
+        "closed": false,
+        "total_voters": 2,
+        "answers": [
+          { "text": "Dune", "voters": 1, "chosen": false },
+          { "text": "Foundation", "voters": 1, "chosen": false }
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "type": "message",
+      "date": "2025-01-01T00:12:00",
+      "date_unixtime": "1735690320",
+      "from": "Bob",
+      "from_id": "user000000301",
+      "text": "",
+      "text_entities": [],
+      "location_information": {
+        "latitude": 51.5074,
+        "longitude": -0.1278
+      }
+    },
+    {
+      "id": 14,
+      "type": "message",
+      "date": "2025-01-01T00:13:00",
+      "date_unixtime": "1735690380",
+      "from": "Alice",
+      "from_id": "user000000300",
+      "text": "",
+      "text_entities": [],
+      "contact_information": {
+        "first_name": "Dana",
+        "last_name": "Reader",
+        "phone_number": "+15550001234"
+      }
+    },
+    {
+      "id": 15,
+      "type": "message",
+      "date": "2025-01-01T00:14:00",
+      "date_unixtime": "1735690440",
+      "edited": "2025-01-01T00:15:00",
+      "edited_unixtime": "1735690500",
+      "from": "Carol",
+      "from_id": "user000000302",
+      "text": "typo fixed: it's Foundation, not Foundations",
+      "text_entities": [
+        {
+          "type": "plain",
+          "text": "typo fixed: it's Foundation, not Foundations"
+        }
+      ]
     }
   ]
 }

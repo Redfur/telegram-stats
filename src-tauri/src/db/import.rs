@@ -142,8 +142,10 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
     let meta = {
         let mut insert_msg = tx
             .prepare(
-                "INSERT INTO messages (chat_id, tg_msg_id, person_id, ts, text_len, word_count) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO messages (chat_id, tg_msg_id, person_id, ts, text_len, word_count, \
+                 media_type, has_photo, has_file, has_poll, has_location, has_contact, \
+                 forwarded_from, edited_ts, duration_seconds) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             )
             .map_err(db_err)?;
 
@@ -177,6 +179,19 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
             let text_len = m.text.plain.chars().count() as i64;
             let word_count = m.text.plain.split_whitespace().count() as i64;
 
+            // "photo"/"poll"/"location_information"/"contact_information" не
+            // смоделированы явно на Message (docs/SPEC.md — Telegram кладёт их
+            // рядом с прочими полями сообщения, без общего media_type) —
+            // единственный способ их увидеть — заглянуть в catch-all `extra`
+            // (model.rs). `has_file` — только когда media_type пуст, иначе
+            // документ с явным медиа-типом (видео/голосовое/etc.) задвоился
+            // бы ещё и в «Файлы».
+            let has_photo = m.extra.contains_key("photo");
+            let has_poll = m.extra.contains_key("poll");
+            let has_location = m.extra.contains_key("location_information");
+            let has_contact = m.extra.contains_key("contact_information");
+            let has_file = m.media_type.is_none() && m.extra.contains_key("file");
+
             insert_msg
                 .execute(params![
                     chat_id,
@@ -184,7 +199,16 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                     person_id,
                     m.date_unixtime,
                     text_len,
-                    word_count
+                    word_count,
+                    m.media_type,
+                    has_photo,
+                    has_file,
+                    has_poll,
+                    has_location,
+                    has_contact,
+                    m.forwarded_from,
+                    m.edited_unixtime,
+                    m.duration_seconds,
                 ])
                 .map_err(db_err)?;
 
@@ -336,7 +360,8 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
     let participant_count = people_cache.len() as i64;
     tx.execute(
         "UPDATE chats SET tg_chat_id=?1, name=?2, chat_type=?3, first_msg_ts=?4, last_msg_ts=?5, \
-         message_count=?6, participant_count=?7, source_file_size=?8 WHERE id=?9",
+         message_count=?6, participant_count=?7, source_file_size=?8, message_types_ready=1 \
+         WHERE id=?9",
         params![
             meta.tg_chat_id,
             meta.name,

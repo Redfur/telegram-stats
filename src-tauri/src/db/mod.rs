@@ -29,8 +29,8 @@ pub struct ChatSummary {
 
 /// Открывает (создавая при необходимости) SQLite-файл и применяет
 /// миграции по `PRAGMA user_version` — вперёд-только, пронумерованные
-/// (см. CLAUDE.md). Пока только `0001_init.sql`; следующая миграция —
-/// такой же блок `if version < N { ...; user_version = N }`.
+/// (см. CLAUDE.md). Следующая миграция — такой же блок
+/// `if version < N { ...; user_version = N }`.
 pub fn open_and_migrate(path: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -48,6 +48,10 @@ pub fn open_and_migrate(path: &Path) -> rusqlite::Result<Connection> {
     if version < 3 {
         conn.execute_batch(include_str!("migrations/0003_people_aliases.sql"))?;
         conn.pragma_update(None, "user_version", 3)?;
+    }
+    if version < 4 {
+        conn.execute_batch(include_str!("migrations/0004_message_types.sql"))?;
+        conn.pragma_update(None, "user_version", 4)?;
     }
 
     Ok(conn)

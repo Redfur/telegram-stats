@@ -10,7 +10,10 @@ use tauri::{Emitter, Manager};
 
 use db::{ChatSummary, CountingReader, Db, ImportContext, ImportProgress, PersonRow};
 use import::ImportError;
-use metrics::{ActivitySeries, ChatTotals, TopParticipants};
+use metrics::{
+    ActivitySeries, ChatTotals, MessageTypeDetail, MessageTypeKind, MessageTypeOverview,
+    TopParticipants, TypeTimeView,
+};
 
 /// Единственный текущий импорт можно отменить — конкурентных импортов
 /// не поддерживаем (`Db`'s `Mutex<Connection>` и так их сериализует),
@@ -171,6 +174,30 @@ fn get_top_participants(db: tauri::State<'_, Db>, chat_id: i64) -> Result<TopPar
     metrics::get_top_participants(&conn, chat_id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_message_type_overview(
+    db: tauri::State<'_, Db>,
+    chat_id: i64,
+) -> Result<MessageTypeOverview, String> {
+    let conn =
+        db.0.lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
+    metrics::get_message_type_overview(&conn, chat_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_message_type_detail(
+    db: tauri::State<'_, Db>,
+    chat_id: i64,
+    kind: MessageTypeKind,
+    view: Option<TypeTimeView>,
+) -> Result<Option<MessageTypeDetail>, String> {
+    let conn =
+        db.0.lock()
+            .map_err(|_| "database lock poisoned".to_string())?;
+    metrics::get_message_type_detail(&conn, chat_id, kind, view).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -196,6 +223,8 @@ pub fn run() {
             get_chat_totals,
             get_activity_series,
             get_top_participants,
+            get_message_type_overview,
+            get_message_type_detail,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
