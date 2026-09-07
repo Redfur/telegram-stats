@@ -107,4 +107,9 @@ pub enum ImportError {
     },
     #[error("event at index {index} missing required field `{field}`")]
     MissingField { index: usize, field: &'static str },
+    /// Колбэк `on_event` (например, запись в SQLite) отказал по своей
+    /// причине — парсер её не типизирует, только пробрасывает наверх и
+    /// останавливает импорт.
+    #[error("import aborted by consumer: {0}")]
+    Sink(String),
 }
