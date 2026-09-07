@@ -18,12 +18,20 @@ fn fresh_db() -> Connection {
     let conn = Connection::open_in_memory().expect("open in-memory db");
     conn.execute_batch(include_str!("../src/db/migrations/0001_init.sql"))
         .expect("apply migration 0001");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0002_chat_source_size.sql"
+    ))
+    .expect("apply migration 0002");
     conn
 }
 
 fn import(conn: &mut Connection, name: &str) -> db::ChatSummary {
+    import_with_size(conn, name, None)
+}
+
+fn import_with_size(conn: &mut Connection, name: &str, size: Option<i64>) -> db::ChatSummary {
     let file = File::open(fixture(name)).expect("fixture file should exist");
-    import_into_db(conn, file, name).expect("import should succeed")
+    import_into_db(conn, file, name, size).expect("import should succeed")
 }
 
 #[test]
@@ -101,5 +109,61 @@ fn reimporting_the_same_chat_updates_instead_of_duplicating() {
         matching.len(),
         1,
         "exactly one row should survive the re-import"
+    );
+}
+
+#[test]
+fn source_file_size_round_trips_and_updates_on_reimport() {
+    let mut conn = fresh_db();
+    let first = import_with_size(&mut conn, "three_day_chat.json", Some(1000));
+    assert_eq!(first.source_file_size, Some(1000));
+
+    let second = import_with_size(&mut conn, "three_day_chat.json", Some(2000));
+    assert_eq!(second.source_file_size, Some(2000), "must reflect the newest import, not the first");
+
+    let chats = db::list_chats(&conn).unwrap();
+    let row = chats.iter().find(|c| c.id == first.id).unwrap();
+    assert_eq!(row.source_file_size, Some(2000));
+}
+
+#[test]
+fn deleting_a_chat_removes_its_messages_and_people() {
+    let mut conn = fresh_db();
+    let doomed = import(&mut conn, "three_day_chat.json");
+    let survivor = import(&mut conn, "personal_chat.json");
+
+    db::delete_chat(&conn, doomed.id).unwrap();
+
+    let chats = db::list_chats(&conn).unwrap();
+    assert_eq!(chats.len(), 1, "only the deleted chat's row should be gone");
+    assert_eq!(chats[0].id, survivor.id);
+
+    let messages_left: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM messages WHERE chat_id = ?1",
+            [doomed.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(messages_left, 0);
+    let people_left: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM people WHERE chat_id = ?1",
+            [doomed.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(people_left, 0);
+
+    let survivor_messages: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM messages WHERE chat_id = ?1",
+            [survivor.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        survivor_messages, survivor.message_count,
+        "the other chat's rows must be untouched"
     );
 }

@@ -14,14 +14,26 @@ async fn import_chat(db: tauri::State<'_, Db>, path: String) -> Result<ChatSumma
     let conn = db.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+        let source_file_size = file.metadata().ok().map(|m| m.len() as i64);
         let mut conn = conn
             .lock()
             .map_err(|_| "database lock poisoned".to_string())?;
-        db::import_into_db(&mut conn, std::io::BufReader::new(file), &path)
-            .map_err(|e| e.to_string())
+        db::import_into_db(
+            &mut conn,
+            std::io::BufReader::new(file),
+            &path,
+            source_file_size,
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn delete_chat(db: tauri::State<'_, Db>, chat_id: i64) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|_| "database lock poisoned".to_string())?;
+    db::delete_chat(&conn, chat_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -74,6 +86,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             import_chat,
             list_chats,
+            delete_chat,
             get_chat_totals,
             get_activity_series,
             get_top_participants,

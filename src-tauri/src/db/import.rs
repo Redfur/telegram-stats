@@ -60,14 +60,15 @@ pub fn import_into_db(
     conn: &mut Connection,
     reader: impl Read,
     source_filename: &str,
+    source_file_size: Option<i64>,
 ) -> Result<ChatSummary, ImportError> {
     let imported_at = now_unixtime();
     let tx = conn.transaction().map_err(db_err)?;
 
     tx.execute(
-        "INSERT INTO chats (tg_chat_id, name, chat_type, source_filename, imported_at) \
-         VALUES (NULL, NULL, '', ?1, ?2)",
-        params![source_filename, imported_at],
+        "INSERT INTO chats (tg_chat_id, name, chat_type, source_filename, imported_at, source_file_size) \
+         VALUES (NULL, NULL, '', ?1, ?2, ?3)",
+        params![source_filename, imported_at, source_file_size],
     )
     .map_err(db_err)?;
     let mut chat_id = tx.last_insert_rowid();
@@ -162,7 +163,7 @@ pub fn import_into_db(
     let participant_count = people_cache.len() as i64;
     tx.execute(
         "UPDATE chats SET tg_chat_id=?1, name=?2, chat_type=?3, first_msg_ts=?4, last_msg_ts=?5, \
-         message_count=?6, participant_count=?7 WHERE id=?8",
+         message_count=?6, participant_count=?7, source_file_size=?8 WHERE id=?9",
         params![
             meta.tg_chat_id,
             meta.name,
@@ -171,6 +172,7 @@ pub fn import_into_db(
             max_ts,
             message_count,
             participant_count,
+            source_file_size,
             chat_id
         ],
     )
@@ -188,5 +190,6 @@ pub fn import_into_db(
         first_msg_ts: min_ts,
         last_msg_ts: max_ts,
         imported_at,
+        source_file_size,
     })
 }

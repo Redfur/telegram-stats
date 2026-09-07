@@ -22,6 +22,7 @@ pub struct ChatSummary {
     pub first_msg_ts: Option<i64>,
     pub last_msg_ts: Option<i64>,
     pub imported_at: i64,
+    pub source_file_size: Option<i64>,
 }
 
 /// Открывает (создавая при необходимости) SQLite-файл и применяет
@@ -38,6 +39,10 @@ pub fn open_and_migrate(path: &Path) -> rusqlite::Result<Connection> {
         conn.execute_batch(include_str!("migrations/0001_init.sql"))?;
         conn.pragma_update(None, "user_version", 1)?;
     }
+    if version < 2 {
+        conn.execute_batch(include_str!("migrations/0002_chat_source_size.sql"))?;
+        conn.pragma_update(None, "user_version", 2)?;
+    }
 
     Ok(conn)
 }
@@ -45,7 +50,7 @@ pub fn open_and_migrate(path: &Path) -> rusqlite::Result<Connection> {
 pub fn list_chats(conn: &Connection) -> rusqlite::Result<Vec<ChatSummary>> {
     let mut stmt = conn.prepare(
         "SELECT id, tg_chat_id, name, chat_type, message_count, participant_count, \
-         first_msg_ts, last_msg_ts, imported_at \
+         first_msg_ts, last_msg_ts, imported_at, source_file_size \
          FROM chats ORDER BY imported_at DESC",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -59,7 +64,16 @@ pub fn list_chats(conn: &Connection) -> rusqlite::Result<Vec<ChatSummary>> {
             first_msg_ts: row.get(6)?,
             last_msg_ts: row.get(7)?,
             imported_at: row.get(8)?,
+            source_file_size: row.get(9)?,
         })
     })?;
     rows.collect()
+}
+
+/// Удаляет чат и всё, что от него зависит (`messages`/`people` —
+/// каскадом через `ON DELETE CASCADE`, см. миграцию `0001`). Фильтр по
+/// `id` — единственный чат, ничего больше затронуто не будет.
+pub fn delete_chat(conn: &Connection, chat_id: i64) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM chats WHERE id = ?1", [chat_id])?;
+    Ok(())
 }
