@@ -3,8 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { Card, Skeleton, UnavailableCard } from "../ui";
 import { ReactionEmojiList } from "./ReactionEmojiList";
 import { ReactionPersonLists } from "./ReactionPersonLists";
+import { ReactionPersonFilter } from "./ReactionPersonFilter";
 import { TopReactedMessages } from "./TopReactedMessages";
-import type { ReactionsOverview, TopReactedMessage } from "../../lib/types";
+import type { PersonRow, ReactionsOverview, TopReactedMessage } from "../../lib/types";
 import styles from "./ReactionsBlock.module.css";
 
 interface ReactionsBlockProps {
@@ -24,11 +25,13 @@ const SWITCH_DEBOUNCE_MS = 150;
 export function ReactionsBlock({ chatId, onReimport }: ReactionsBlockProps) {
   const [overview, setOverview] = useState<ReactionsOverview | null>(null);
   const [topMessages, setTopMessages] = useState<TopReactedMessage[] | null>(null);
+  const [people, setPeople] = useState<PersonRow[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setOverview(null);
     setTopMessages(null);
+    setPeople(null);
     const timer = setTimeout(() => {
       invoke<ReactionsOverview>("get_reactions_overview", { chatId }).then((r) => {
         if (cancelled) return;
@@ -36,6 +39,9 @@ export function ReactionsBlock({ chatId, onReimport }: ReactionsBlockProps) {
         if (r.status === "available") {
           invoke<TopReactedMessage[]>("get_top_reacted_messages", { chatId }).then((msgs) => {
             if (!cancelled) setTopMessages(msgs);
+          });
+          invoke<PersonRow[]>("get_people", { chatId }).then((p) => {
+            if (!cancelled) setPeople(p);
           });
         }
       });
@@ -95,6 +101,9 @@ export function ReactionsBlock({ chatId, onReimport }: ReactionsBlockProps) {
         received={overview.received}
         givenDataIncomplete={overview.given_data_incomplete}
       />
+      {people && people.length > 0 && (
+        <ReactionPersonFilter chatId={chatId} people={people} onReimport={onReimport} />
+      )}
       {topMessages && topMessages.length > 0 && <TopReactedMessages messages={topMessages} />}
     </div>
   );

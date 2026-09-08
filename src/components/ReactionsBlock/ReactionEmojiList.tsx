@@ -1,4 +1,5 @@
-import { CardKicker } from "../ui";
+import { useState } from "react";
+import { Button, CardKicker } from "../ui";
 import type { ReactionEmojiCount } from "../../lib/types";
 import styles from "./ReactionsBlock.module.css";
 
@@ -8,6 +9,11 @@ interface ReactionEmojiListProps {
   reactedMessageCount: number;
   totalMessages: number;
 }
+
+// Список эмодзи может быть длинным (стикерпаки, кастомные реакции) — по
+// умолчанию видно топ-10, остальное — под "показать все", тот же приём,
+// что и у MessageTypeToggle (VISIBLE_COUNT + разворачивание по клику).
+const VISIBLE_COUNT = 10;
 
 // Сводка блока (карточка сверху): две цифры + бар-чарт по типам реакций,
 // отсортированным по частоте бэкендом (metrics::reactions). custom_emoji
@@ -20,8 +26,11 @@ export function ReactionEmojiList({
   reactedMessageCount,
   totalMessages,
 }: ReactionEmojiListProps) {
+  const [expanded, setExpanded] = useState(false);
   const maxCount = Math.max(1, ...topEmoji.map((e) => e.count));
   const pctReacted = totalMessages > 0 ? (reactedMessageCount / totalMessages) * 100 : 0;
+  const visible = expanded ? topEmoji : topEmoji.slice(0, VISIBLE_COUNT);
+  const hiddenCount = topEmoji.length - visible.length;
 
   return (
     <div className={styles.summary}>
@@ -39,7 +48,7 @@ export function ReactionEmojiList({
         </div>
       </div>
       <div className={styles.emojiList}>
-        {topEmoji.map((e, i) => (
+        {visible.map((e, i) => (
           <div key={`${e.kind}-${e.emoji ?? e.document_id ?? i}`} className={styles.emojiRow}>
             <span className={styles.emojiGlyph}>{e.emoji ?? "🖼"}</span>
             <div className={styles.barTrack}>
@@ -52,6 +61,11 @@ export function ReactionEmojiList({
           </div>
         ))}
       </div>
+      {hiddenCount > 0 && (
+        <Button type="button" variant="ghost" className={styles.showAll} onClick={() => setExpanded(true)}>
+          показать все ({hiddenCount} ещё) ▾
+        </Button>
+      )}
     </div>
   );
 }

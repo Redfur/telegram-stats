@@ -50,6 +50,13 @@
 .emojiGlyph {
   font-size: 18px;
   text-align: center;
+  /* Oswald/Manrope (--font-head/--font-body, fonts.css) — латиница/кириллица,
+     без покрытия эмодзи-диапазона: без явного стека браузер в части сред
+     (замечено на Linux/WebKit без системного цветного эмодзи-шрифта) не
+     подставляет вообще ничего вместо "тофу". Явные системные эмодзи-шрифты
+     первыми в стеке — не сетевая загрузка, а подсказка браузеру, каким
+     локально установленным шрифтом рисовать конкретно эти глифы. */
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
 }
 
 .barTrack {
@@ -63,10 +70,52 @@
   background: var(--accent);
 }
 
+.showAll {
+  align-self: flex-start;
+  margin-top: var(--sp-2);
+}
+
 .personGrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: var(--sp-6);
+}
+
+.personPicker {
+  width: 100%;
+  margin: var(--sp-4) 0 var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
+  background: transparent;
+  color: var(--text);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+.breakdownGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-6);
+}
+
+.miniListTitle {
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: var(--sp-3);
+}
+
+.inlineAction {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.inlineAction:hover {
+  color: var(--accent-hover);
 }
 
 .personHead {
@@ -111,21 +160,32 @@
 }
 
 .messageRow {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: baseline;
-  gap: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
   padding: var(--sp-3) 0;
   border-bottom: var(--border-w) solid var(--border-soft);
   font-size: 13px;
 }
 
 .messagePreview {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.messageMeta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
 }
 
 .messageAuthor {
   color: var(--text-muted);
+}
+
+.messageDate {
+  color: var(--text-faint);
+  font-size: 12px;
+  cursor: default;
 }

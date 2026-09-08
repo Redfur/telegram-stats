@@ -173,7 +173,19 @@ export interface TopReactedMessage {
   display_name: string | null;
   ts: number | null;
   preview_text: string | null;
+  /** Тип сообщения ("Фото", "Голосовое сообщение", …) — задан вне зависимости
+   *  от preview_text, когда есть распознанный медиа-тип. */
+  content_label: string | null;
   total_count: number;
+}
+
+export interface PersonReactionBreakdown {
+  given: ReactionEmojiCount[];
+  /** Из reaction_person_stats — может быть больше суммы given, если часть
+   *  реакций посчитана до миграции с разбивкой по эмодзи (нужен переимпорт). */
+  given_total: number;
+  received: ReactionEmojiCount[];
+  received_total: number;
 }
 
 export interface PersonRow {
