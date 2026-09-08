@@ -27,10 +27,22 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Tag version as dev build
+        id: vars
+        shell: bash
+        run: |
+          SHA=$(git rev-parse --short=7 HEAD)
+          BASE_VERSION=$(jq -r .version src-tauri/tauri.conf.json)
+          DEV_VERSION="${BASE_VERSION}-dev.${SHA}"
+          jq --arg v "$DEV_VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json
+          mv tmp.json src-tauri/tauri.conf.json
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Building dev version: $DEV_VERSION"
+
       - run: pnpm tauri build
 
       - uses: actions/upload-artifact@v4
         with:
-          name: telegram-stats-windows-nsis
+          name: telegram-stats-windows-nsis-${{ steps.vars.outputs.sha }}
           path: src-tauri/target/release/bundle/nsis/*.exe
           retention-days: 14
