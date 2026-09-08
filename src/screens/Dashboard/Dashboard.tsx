@@ -6,6 +6,7 @@ import { ActivityChart } from "../../components/ActivityChart/ActivityChart";
 import { ParticipantsTable } from "../../components/ParticipantsTable/ParticipantsTable";
 import { MessageTypesBlock } from "../../components/MessageTypesBlock/MessageTypesBlock";
 import { ReactionsBlock } from "../../components/ReactionsBlock/ReactionsBlock";
+import { TimelineBlock } from "../../components/TimelineBlock/TimelineBlock";
 import type { ActivitySeries, ChatTotals, TopParticipants } from "../../lib/types";
 import styles from "./Dashboard.module.css";
 
@@ -24,9 +25,9 @@ const SWITCH_DEBOUNCE_MS = 150;
 
 // Разделы 00/01/02/03 макета «Дашборд» (вариант 2a: 00 сводка, 01
 // активность, 02 кто писал) + ход t6 (03 типы сообщений) + 04 реакции
-// (docs/SPEC.md §9 «Социальная динамика», первый срез) — остальные
-// секции макета (хронология слов, рекорды) — следующий инкремент
-// (docs/PLAN.md).
+// (docs/SPEC.md §9 «Социальная динамика», первый срез) + ход t10/10a (05
+// таймлайн участников) — остальные секции макета (хронология слов,
+// рекорды) — следующий инкремент (docs/PLAN.md).
 export function Dashboard({ chatId, chatType, tgChatId, onReimport }: DashboardProps) {
   const [totals, setTotals] = useState<ChatTotals | null>(null);
   const [activity, setActivity] = useState<ActivitySeries | null>(null);
@@ -145,6 +146,14 @@ export function Dashboard({ chatId, chatType, tgChatId, onReimport }: DashboardP
           <span className="sec">РЕАКЦИИ</span>
         </div>
         <ReactionsBlock chatId={chatId} chatType={chatType} tgChatId={tgChatId} onReimport={onReimport} />
+      </section>
+
+      <section>
+        <div className={styles.sectionHead}>
+          <span className="kick">05</span>
+          <span className="sec">УЧАСТНИКИ · ТАЙМЛАЙН</span>
+        </div>
+        <TimelineBlock chatId={chatId} onReimport={onReimport} />
       </section>
     </div>
   );

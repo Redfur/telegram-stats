@@ -202,6 +202,65 @@ export interface PersonReactionBreakdown {
   received_total: number;
 }
 
+// Зеркалит src-tauri/src/metrics/timeline.rs — блок «Таймлайн участников»
+// (дашборд, секция 05).
+export interface TimelineCompositionPoint {
+  ts: number;
+  count: number;
+}
+
+export type TimelineGroupEventKind = "created" | "title_changed" | "photo_changed" | "migrated";
+
+export interface TimelineGroupEvent {
+  kind: TimelineGroupEventKind;
+  ts: number;
+  actor_id: number | null;
+  actor_display_name: string | null;
+  detail: string | null;
+}
+
+export type TimelineSegmentStartKind = "joined" | "since_start";
+export type TimelineSegmentEndKind = "left" | "removed";
+
+export interface TimelineSegment {
+  start_ts: number;
+  start_kind: TimelineSegmentStartKind;
+  end_ts: number | null;
+  end_kind: TimelineSegmentEndKind | null;
+}
+
+export interface PersonTimelineRow {
+  person_id: number;
+  display_name: string | null;
+  /** Обычно один элемент; больше одного — участник выходил и возвращался. */
+  segments: TimelineSegment[];
+}
+
+export interface TimelineSummary {
+  total: number;
+  current: number;
+  left: number;
+  /** Та же точка отсчёта, что бэкенд использует для срока активных участников. */
+  as_of_ts: number | null;
+  median_tenure_days: number | null;
+  peak_headcount: number;
+  peak_headcount_ts: number | null;
+  group_event_count: number;
+  last_group_event_ts: number | null;
+  /** Сколько событий не удалось сопоставить с конкретным участником по имени. */
+  unresolved_event_count: number;
+  composition: TimelineCompositionPoint[];
+  group_events: TimelineGroupEvent[];
+  /** Отсортированы по дате первого появления в чате. */
+  people: PersonTimelineRow[];
+}
+
+// Rust-enum с internally-tagged `status` — та же схема, что и ReactionsOverview.
+export type TimelineOverview =
+  | { status: "needs_reimport" }
+  | { status: "not_applicable" }
+  | ({ status: "available" } & TimelineSummary);
+
 export interface PersonRow {
   id: number;
   display_name: string | null;

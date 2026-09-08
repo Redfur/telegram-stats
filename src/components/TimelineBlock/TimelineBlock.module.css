@@ -1,0 +1,257 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+.caveat {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* --- Шапка --- */
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-7);
+  border-bottom: var(--border-w) solid var(--border-soft);
+  padding-bottom: var(--sp-5);
+}
+
+.headerTotal {
+  flex: none;
+}
+
+.headerLabel {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.headerTotalRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-4);
+  margin-top: var(--sp-2);
+}
+
+.headerTotalValue {
+  font: 600 38px/0.92 var(--font-head), sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.headerTotalCaption {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.headerRight {
+  flex: 1;
+  min-width: 0;
+  border-left: var(--border-w) solid var(--border-soft);
+  padding-left: var(--sp-6);
+}
+
+.headerStats {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: var(--sp-2) var(--sp-8);
+  justify-content: start;
+}
+
+.headerStatLabel {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.headerStatValue {
+  font: 600 20px/1.1 var(--font-head), sans-serif;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.headerStatSub {
+  font: 400 11.5px/1.3 var(--font-body), sans-serif;
+  color: var(--text-faint);
+}
+
+.capsule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.capsuleName {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  font: 600 19px/1 var(--font-head), sans-serif;
+}
+
+.capsuleSwatch {
+  width: 18px;
+  height: 4px;
+  align-self: center;
+}
+
+.capsuleMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-6);
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- График --- */
+
+.chart {
+  margin-top: var(--sp-6);
+}
+
+.compositionHead {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.compositionLabel {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.compositionPeak {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.groupEventsLabel {
+  margin-left: auto;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.compositionSvg {
+  display: block;
+  width: 100%;
+  height: 26px;
+}
+
+.compositionLine {
+  fill: none;
+  stroke: var(--chart-line);
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.plot {
+  position: relative;
+  margin-top: var(--sp-4);
+}
+
+.groupEventsRow {
+  position: relative;
+  height: 18px;
+  border-top: var(--border-w) solid var(--border-soft);
+}
+
+.groupEventsAxis {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 9px;
+  height: 1px;
+  background: var(--accent-weak);
+}
+
+.groupDot {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: var(--accent-hover);
+  box-shadow: 0 0 0 2.5px var(--surface);
+  cursor: default;
+  transition: transform 0.1s;
+}
+.groupDot:hover {
+  transform: translateY(-50%) scale(1.3);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: var(--sp-3);
+}
+
+.row {
+  position: relative;
+  height: 18px;
+}
+
+.gap {
+  position: absolute;
+  top: 8px;
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--text-faint) 0 3px,
+    transparent 3px 6px
+  );
+}
+
+.segment {
+  position: absolute;
+  top: 7px;
+  height: 4px;
+  transition: height 0.12s, top 0.12s;
+}
+.row:hover .segment {
+  top: 5.5px;
+  height: 7px;
+}
+
+.personDot {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  border: 2px solid;
+  box-sizing: border-box;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--surface);
+  cursor: default;
+  transition: transform 0.1s;
+}
+.personDot:hover {
+  transform: translateY(-50%) scale(1.3);
+}
+
+.yearAxis {
+  position: relative;
+  height: 14px;
+  margin-top: var(--sp-3);
+  border-top: var(--border-w) solid var(--border-soft);
+}
+
+.yearTick {
+  position: absolute;
+  top: 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
