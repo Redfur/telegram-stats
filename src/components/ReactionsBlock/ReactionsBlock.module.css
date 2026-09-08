@@ -11,44 +11,145 @@
   text-align: center;
 }
 
+.caveat {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* --- Сводка (ReactionEmojiList) --- */
+
 .summary {
   display: flex;
   flex-direction: column;
   gap: var(--sp-6);
 }
 
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--sp-6);
-}
-
-.tile {
+.statRow {
   display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
+  align-items: flex-start;
+  gap: var(--sp-7);
+  border-bottom: var(--border-w) solid var(--border-soft);
+  padding-bottom: var(--sp-5);
 }
 
-.pct {
-  font-size: 12px;
+.statMain {
+  flex: none;
+}
+
+.statBig {
+  font: 600 44px/.95 var(--font-head), sans-serif;
+  font-variant-numeric: tabular-nums;
+  margin-top: var(--sp-2);
+}
+
+.statCaption {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: var(--sp-2);
+}
+
+.statTiles {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.statTile {
+  padding: 0 var(--sp-5);
+  border-left: var(--border-w) solid var(--border-soft);
+}
+.statTile:first-child {
+  border-left: none;
+  padding-left: 0;
+}
+
+.statTileLabel {
+  font-size: 10.5px;
+  letter-spacing: .08em;
   color: var(--text-faint);
 }
 
-.emojiList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
+.statTileValue {
+  font: 600 22px/1.1 var(--font-head), sans-serif;
+  font-variant-numeric: tabular-nums;
+  margin-top: var(--sp-2);
 }
 
-.emojiRow {
+.statTileGlyphs {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  margin-top: var(--sp-2);
+  font-size: 17px;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+}
+
+/* --- Сетка эмодзи --- */
+
+.emojiGrid {
   display: grid;
-  grid-template-columns: 28px 1fr auto;
-  align-items: center;
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--sp-4);
 }
 
+.emojiCell {
+  border: var(--border-w) solid var(--border-soft);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.emojiCellHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.emojiCellCount {
+  font: 600 16px/1 var(--font-head), sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.emojiCellPct {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.emojiTail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: var(--border-w) solid var(--border-soft);
+}
+
+.emojiTailChip {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  border: var(--border-w) solid var(--border-soft);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.showAll {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+.showAll:hover {
+  color: var(--accent-hover);
+}
+
 .emojiGlyph {
-  font-size: 18px;
+  font-size: 16px;
+  line-height: 1;
   text-align: center;
   /* Oswald/Manrope (--font-head/--font-body, fonts.css) — латиница/кириллица,
      без покрытия эмодзи-диапазона: без явного стека браузер в части сред
@@ -61,8 +162,9 @@
 
 .barTrack {
   width: 100%;
-  height: 8px;
+  height: 5px;
   background: var(--border-soft);
+  margin-top: var(--sp-3);
 }
 
 .barFill {
@@ -70,40 +172,157 @@
   background: var(--accent);
 }
 
-.showAll {
-  align-self: flex-start;
-  margin-top: var(--sp-2);
+/* --- Таблица обмена --- */
+
+.accentCell {
+  color: var(--accent);
 }
 
-.personGrid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--sp-6);
-}
-
-.personPicker {
-  width: 100%;
-  margin: var(--sp-4) 0 var(--sp-5);
-  padding: var(--sp-3) var(--sp-4);
-  background: transparent;
-  color: var(--text);
-  border: var(--border-w) solid var(--border);
-  border-radius: var(--radius);
-  font: inherit;
-}
-
-.breakdownGrid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--sp-6);
-}
-
-.miniListTitle {
-  font-size: 11px;
-  letter-spacing: .06em;
-  text-transform: uppercase;
+.mutedCell {
   color: var(--text-faint);
-  margin-bottom: var(--sp-3);
+}
+
+.balanceTrack {
+  position: relative;
+  height: 9px;
+  background: rgba(233, 235, 236, .08);
+}
+
+.balanceAxis {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: var(--border-w);
+  background: var(--border-soft);
+}
+
+.balanceFill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+.balanceGive {
+  background: var(--text-faint);
+}
+.balanceGet {
+  background: var(--accent);
+}
+
+/* --- Селект участника --- */
+
+.personFilterHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-4);
+}
+
+.personPickerWrap {
+  margin-left: auto;
+  position: relative;
+  width: 236px;
+}
+
+.personPickerTrigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: transparent;
+  border: var(--border-w) solid var(--border);
+  padding: var(--sp-3) var(--sp-4);
+  font: 400 13px/1 var(--font-body), sans-serif;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.personPickerTrigger:hover {
+  border-color: var(--text-muted);
+}
+
+.personPickerLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personPickerCaret {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+.personPickerPanel {
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: -1px;
+  background: var(--surface-raised);
+  border: var(--border-w) solid var(--accent);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .35);
+}
+
+.personPickerSearch {
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  border: none;
+  border-bottom: var(--border-w) solid var(--border-soft);
+  color: var(--text);
+  font: 400 12.5px/1 var(--font-body), sans-serif;
+  padding: var(--sp-4);
+  outline: none;
+}
+
+.personPickerList {
+  max-height: 214px;
+  overflow: auto;
+}
+
+.personPickerEmpty {
+  padding: var(--sp-4);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.personPickerItem {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  font: 400 12.5px/1 var(--font-body), sans-serif;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.personPickerItem[data-selected="true"] {
+  background: rgba(233, 235, 236, .08);
+}
+
+.personPickerMark {
+  width: 10px;
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.personPickerItemName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personPickerItemCount {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.matchHighlight {
+  color: var(--accent);
 }
 
 .inlineAction {
@@ -118,74 +337,112 @@
   color: var(--accent-hover);
 }
 
-.personHead {
+/* --- Диаграмма-весы разбивки по участнику --- */
+
+.breakdownGrid {
+  margin-top: var(--sp-5);
+}
+
+.divergingWrap {
+  margin-top: var(--sp-5);
+}
+
+.divergingTotals {
   display: flex;
-  align-items: baseline;
-  gap: var(--sp-4);
+  justify-content: space-between;
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  color: var(--text-faint);
   margin-bottom: var(--sp-4);
 }
 
-.caveat {
-  font-size: 11px;
-  color: var(--text-faint);
+.divergingTotalGive {
+  color: var(--text-muted);
 }
 
-.personList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
+.divergingTotalGet {
+  color: var(--accent);
 }
 
-.personRow {
+.divergingRow {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr 40px 24px 40px 1fr;
+  column-gap: var(--sp-3);
   align-items: center;
-  gap: var(--sp-4);
+  padding: var(--sp-2) 0;
   font-size: 13px;
 }
 
-.personName {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.divergingBarGive {
+  display: flex;
+  justify-content: flex-end;
+  height: 8px;
 }
+.divergingFillGive {
+  height: 100%;
+  background: color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+.divergingBarGet {
+  height: 8px;
+}
+.divergingFillGet {
+  height: 100%;
+  background: var(--accent);
+}
+
+/* --- Топ сообщений --- */
 
 .messageList {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
   list-style: none;
   padding: 0;
   margin: var(--sp-4) 0 0;
 }
 
 .messageRow {
+  border-top: var(--border-w) solid var(--border-soft);
+}
+
+.messageLink {
+  width: 100%;
   display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
+  align-items: baseline;
+  gap: var(--sp-4);
+  background: none;
+  border: none;
   padding: var(--sp-3) 0;
-  border-bottom: var(--border-w) solid var(--border-soft);
-  font-size: 13px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: default;
+}
+button.messageLink {
+  cursor: pointer;
+}
+button.messageLink:hover {
+  color: var(--accent);
+}
+
+.messageRank {
+  flex: none;
+  width: 22px;
+  font: 600 15px/1 var(--font-head), sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
 }
 
 .messagePreview {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.messageMeta {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--sp-4);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .messageAuthor {
-  color: var(--text-muted);
-}
-
-.messageDate {
+  flex: none;
+  font-size: 11.5px;
   color: var(--text-faint);
-  font-size: 12px;
-  cursor: default;
 }

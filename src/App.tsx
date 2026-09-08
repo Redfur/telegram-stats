@@ -23,8 +23,11 @@ function DashboardRoute({ chats, onReimport }: { chats: ChatSummary[]; onReimpor
   // клик «Удалить» на LibraryCard, пока эта же ссылка ещё жила в рельсе)
   // — сюда мы попадаем, только когда id уже есть в списке (см. handleSelectChat/
   // handleImported), но список асинхронный, так что подстрахуемся.
-  if (!chats.some((c) => c.id === id)) return <Navigate to="/" replace />;
-  return <Dashboard chatId={id} onReimport={onReimport} />;
+  const chat = chats.find((c) => c.id === id);
+  if (!chat) return <Navigate to="/" replace />;
+  return (
+    <Dashboard chatId={id} chatType={chat.chat_type} tgChatId={chat.tg_chat_id} onReimport={onReimport} />
+  );
 }
 
 function ParticipantsRoute({ chats }: { chats: ChatSummary[] }) {

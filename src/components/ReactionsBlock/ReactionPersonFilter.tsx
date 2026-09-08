@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, CardKicker, Skeleton } from "../ui";
+import { Command } from "cmdk";
+import { CardKicker, Skeleton } from "../ui";
 import type { PersonReactionBreakdown, PersonRow, ReactionEmojiCount } from "../../lib/types";
 import styles from "./ReactionsBlock.module.css";
 
@@ -10,14 +11,62 @@ interface ReactionPersonFilterProps {
   onReimport: () => void;
 }
 
-// Фильтр по участнику (запрошено отдельно от общих топ-10 given/received):
-// в отличие от них, выбор не ограничен видимой десяткой — селект несёт
-// всех участников чата (переиспользует get_people, тот же список, что и
-// экран «Участники»), а разбивку по конкретным эмодзи тянет отдельным
-// invoke только по выбору, не для всех сразу.
+interface DivergingRow {
+  emoji: string | null;
+  give: number;
+  get: number;
+}
+
+function mergeBreakdown(given: ReactionEmojiCount[], received: ReactionEmojiCount[]): DivergingRow[] {
+  const key = (e: ReactionEmojiCount) => `${e.kind}|${e.emoji ?? ""}|${e.document_id ?? ""}`;
+  const rows = new Map<string, DivergingRow>();
+  for (const e of given) {
+    rows.set(key(e), { emoji: e.emoji, give: e.count, get: 0 });
+  }
+  for (const e of received) {
+    const k = key(e);
+    const existing = rows.get(k);
+    if (existing) existing.get = e.count;
+    else rows.set(k, { emoji: e.emoji, give: 0, get: e.count });
+  }
+  return [...rows.values()].sort((a, b) => b.give + b.get - (a.give + a.get));
+}
+
+// Подсвечивает первое вхождение query в name (без учёта регистра) — тот
+// же приём, что показан в макете 8b для поиска участника.
+function highlightMatch(name: string, query: string) {
+  if (!query) return name;
+  const idx = name.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return name;
+  return (
+    <>
+      {name.slice(0, idx)}
+      <span className={styles.matchHighlight}>{name.slice(idx, idx + query.length)}</span>
+      {name.slice(idx + query.length)}
+    </>
+  );
+}
+
+// Кастомный поисковый селект участника (макет «Дашборд», ход t8/8b) —
+// cmdk даёт фильтрацию/клавиатурную навигацию/a11y, подсветку совпадений
+// и позиционирование делаем сами (свою тему на headless-базу).
 export function ReactionPersonFilter({ chatId, people, onReimport }: ReactionPersonFilterProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const [personId, setPersonId] = useState<number | null>(null);
   const [breakdown, setBreakdown] = useState<PersonReactionBreakdown | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open]);
 
   useEffect(() => {
     if (personId == null) {
@@ -34,106 +83,125 @@ export function ReactionPersonFilter({ chatId, people, onReimport }: ReactionPer
     };
   }, [chatId, personId]);
 
-  const sorted = [...people].sort((a, b) =>
-    (a.display_name || "").localeCompare(b.display_name || "", "ru"),
+  const sorted = useMemo(
+    () => [...people].sort((a, b) => (a.display_name || "").localeCompare(b.display_name || "", "ru")),
+    [people],
   );
+  const selected = people.find((p) => p.id === personId) ?? null;
+
+  const diverging = breakdown ? mergeBreakdown(breakdown.given, breakdown.received) : [];
+  const maxGive = Math.max(1, ...diverging.map((r) => r.give));
+  const maxGet = Math.max(1, ...diverging.map((r) => r.get));
 
   return (
-    <Card>
-      <CardKicker>Разбивка по участнику</CardKicker>
-      <select
-        className={styles.personPicker}
-        value={personId ?? ""}
-        onChange={(e) => setPersonId(e.target.value ? Number(e.target.value) : null)}
-      >
-        <option value="">Выберите участника…</option>
-        {sorted.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.display_name || "Без имени"}
-          </option>
-        ))}
-      </select>
+    <div>
+      <div className={styles.personFilterHead}>
+        <CardKicker>Разбивка по участнику</CardKicker>
+        <div className={styles.personPickerWrap} ref={rootRef}>
+          <button
+            type="button"
+            className={styles.personPickerTrigger}
+            onClick={() => setOpen((v) => !v)}
+          >
+            <span className={styles.personPickerLabel}>
+              {selected ? selected.display_name || "Без имени" : "Выберите участника"}
+            </span>
+            <span className={styles.personPickerCaret}>{open ? "▲" : "▼"}</span>
+          </button>
+          {open && (
+            <Command className={styles.personPickerPanel} shouldFilter={false} label="Поиск участника">
+              <Command.Input
+                autoFocus
+                value={search}
+                onValueChange={setSearch}
+                placeholder="поиск участника"
+                className={styles.personPickerSearch}
+              />
+              <Command.List className={styles.personPickerList}>
+                <Command.Empty className={styles.personPickerEmpty}>
+                  Никого не нашли — проверьте написание или объедините дубли в разборе участников.
+                </Command.Empty>
+                {sorted
+                  .filter((p) =>
+                    (p.display_name || "").toLowerCase().includes(search.trim().toLowerCase()),
+                  )
+                  .map((p) => (
+                    <Command.Item
+                      key={p.id}
+                      value={String(p.id)}
+                      onSelect={() => {
+                        setPersonId(p.id);
+                        setOpen(false);
+                        setSearch("");
+                      }}
+                      className={styles.personPickerItem}
+                    >
+                      <span className={styles.personPickerMark}>{p.id === personId ? "✓" : ""}</span>
+                      <span className={styles.personPickerItemName}>
+                        {highlightMatch(p.display_name || "Без имени", search.trim())}
+                      </span>
+                      <span className={styles.personPickerItemCount}>
+                        {p.message_count.toLocaleString("ru-RU")}
+                      </span>
+                    </Command.Item>
+                  ))}
+              </Command.List>
+            </Command>
+          )}
+        </div>
+      </div>
 
       {personId != null && breakdown == null && (
         <div className={styles.breakdownGrid} aria-busy="true">
-          <Skeleton height={60} />
-          <Skeleton height={60} />
+          <Skeleton height={80} />
         </div>
       )}
 
-      {breakdown && (
-        <div className={styles.breakdownGrid}>
-          <EmojiMiniList
-            title="Ставит"
-            items={breakdown.given}
-            total={breakdown.given_total}
-            onReimport={onReimport}
-          />
-          <EmojiMiniList
-            title="Получает"
-            items={breakdown.received}
-            total={breakdown.received_total}
-            onReimport={onReimport}
-          />
+      {breakdown && breakdown.given_total === 0 && breakdown.received_total === 0 && (
+        <div className={styles.empty}>
+          Ни поставленных, ни полученных реакций — участник вышел до того, как они появились в чате.
         </div>
       )}
-    </Card>
-  );
-}
 
-function EmojiMiniList({
-  title,
-  items,
-  total,
-  onReimport,
-}: {
-  title: string;
-  items: ReactionEmojiCount[];
-  total: number;
-  onReimport: () => void;
-}) {
-  if (total === 0) {
-    return (
-      <div>
-        <div className={styles.miniListTitle}>{title}</div>
-        <div className={styles.empty}>Нет данных</div>
-      </div>
-    );
-  }
-  // total > 0, но разбивки нет — реакции посчитаны до появления разбивки
-  // по эмодзи (миграция 0009), общий счётчик при этом уже верный.
-  if (items.length === 0) {
-    return (
-      <div>
-        <div className={styles.miniListTitle}>{title}</div>
-        <p className={styles.caveat}>
-          Разбивка по эмодзи недоступна для части реакций —{" "}
-          <button type="button" className={styles.inlineAction} onClick={onReimport}>
-            переимпортируйте чат
-          </button>
-        </p>
-      </div>
-    );
-  }
-
-  const maxCount = Math.max(1, ...items.map((i) => i.count));
-  return (
-    <div>
-      <div className={styles.miniListTitle}>{title}</div>
-      <div className={styles.emojiList}>
-        {items.map((e, i) => (
-          <div key={`${e.kind}-${e.emoji ?? e.document_id ?? i}`} className={styles.emojiRow}>
-            <span className={styles.emojiGlyph}>{e.emoji ?? "🖼"}</span>
-            <div className={styles.barTrack}>
-              <div
-                className={styles.barFill}
-                style={{ width: `${Math.round((e.count / maxCount) * 100)}%` }}
-              />
-            </div>
-            <span className="num">{e.count.toLocaleString("ru-RU")}</span>
+      {breakdown && (breakdown.given_total > 0 || breakdown.received_total > 0) && (
+        <div className={styles.divergingWrap}>
+          <div className={styles.divergingTotals}>
+            <span className={styles.divergingTotalGive}>
+              СТАВИТ <span className="num">{breakdown.given_total.toLocaleString("ru-RU")}</span>
+            </span>
+            <span className={styles.divergingTotalGet}>
+              <span className="num">{breakdown.received_total.toLocaleString("ru-RU")}</span> ПОЛУЧАЕТ
+            </span>
           </div>
-        ))}
-      </div>
+          {breakdown.given_total > 0 && breakdown.given.length === 0 && (
+            <p className={styles.caveat}>
+              Разбивка по эмодзи для части реакций недоступна —{" "}
+              <button type="button" className={styles.inlineAction} onClick={onReimport}>
+                переимпортируйте чат
+              </button>
+            </p>
+          )}
+          {diverging.map((row, i) => (
+            <div key={`${row.emoji ?? i}`} className={styles.divergingRow}>
+              <div className={styles.divergingBarGive}>
+                <div
+                  className={styles.divergingFillGive}
+                  style={{ width: `${Math.round((row.give / maxGive) * 100)}%` }}
+                />
+              </div>
+              <span className="num">{row.give.toLocaleString("ru-RU")}</span>
+              <span className={styles.emojiGlyph}>{row.emoji ?? "🖼"}</span>
+              <span className="num">{row.get.toLocaleString("ru-RU")}</span>
+              <div className={styles.divergingBarGet}>
+                <div
+                  className={styles.divergingFillGet}
+                  style={{ width: `${Math.round((row.get / maxGet) * 100)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

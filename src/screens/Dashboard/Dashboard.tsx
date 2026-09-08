@@ -11,6 +11,8 @@ import styles from "./Dashboard.module.css";
 
 interface DashboardProps {
   chatId: number;
+  chatType: string;
+  tgChatId: number | null;
   onReimport: () => void;
 }
 
@@ -25,7 +27,7 @@ const SWITCH_DEBOUNCE_MS = 150;
 // (docs/SPEC.md §9 «Социальная динамика», первый срез) — остальные
 // секции макета (хронология слов, рекорды) — следующий инкремент
 // (docs/PLAN.md).
-export function Dashboard({ chatId, onReimport }: DashboardProps) {
+export function Dashboard({ chatId, chatType, tgChatId, onReimport }: DashboardProps) {
   const [totals, setTotals] = useState<ChatTotals | null>(null);
   const [activity, setActivity] = useState<ActivitySeries | null>(null);
   const [participants, setParticipants] = useState<TopParticipants | null>(null);
@@ -142,7 +144,7 @@ export function Dashboard({ chatId, onReimport }: DashboardProps) {
           <span className="kick">04</span>
           <span className="sec">РЕАКЦИИ</span>
         </div>
-        <ReactionsBlock chatId={chatId} onReimport={onReimport} />
+        <ReactionsBlock chatId={chatId} chatType={chatType} tgChatId={tgChatId} onReimport={onReimport} />
       </section>
     </div>
   );

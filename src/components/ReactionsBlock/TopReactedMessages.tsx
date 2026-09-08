@@ -1,43 +1,62 @@
-import { Card, CardKicker } from "../ui";
-import { formatFullDateTime, formatShortDate } from "../../lib/formatMessageTimestamp";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { CardKicker } from "../ui";
 import type { TopReactedMessage } from "../../lib/types";
 import styles from "./ReactionsBlock.module.css";
 
 interface TopReactedMessagesProps {
   messages: TopReactedMessage[];
+  chatType: string;
+  tgChatId: number | null;
 }
 
-// Превью снято во время импорта (message_reaction_previews) — `messages`
-// сам текст не хранит, поэтому это единственный источник содержимого.
-// Для сообщений без текста (фото/голосовое/etc без подписи) бэкенд отдаёт
-// content_label вместо пустой строки. Дата — как есть, без предположений
-// о часовом поясе (тот же принцип, что и у графика активности), полная
-// дата-время — в title на наведение, чтобы искать сообщение в Telegram.
-export function TopReactedMessages({ messages }: TopReactedMessagesProps) {
+// Только супергруппы/каналы имеют постоянную ссылку вида
+// t.me/c/<id>/<msg> — у личных чатов и обычных ("basic") групп такой
+// ссылки не существует в принципе, не только в нашей БД.
+function canDeepLink(chatType: string, tgChatId: number | null): boolean {
+  return tgChatId != null && (chatType.includes("supergroup") || chatType.includes("channel"));
+}
+
+// «Самые залайканные» (макет «Дашборд», ход t8/8a) — ранг + одна строка
+// текста с многоточием + автор. Превью снято во время импорта
+// (message_reaction_previews) — `messages` сам текст не хранит;
+// content_label — фолбэк для сообщений без подписи (фото/голосовое/etc).
+// Клик открывает сообщение в Telegram внешней ссылкой (openUrl —
+// системный обработчик t.me-ссылок, не сетевой вызов из приложения).
+export function TopReactedMessages({ messages, chatType, tgChatId }: TopReactedMessagesProps) {
+  const linkable = canDeepLink(chatType, tgChatId);
+
   return (
-    <Card>
-      <CardKicker>Самые залайканные сообщения</CardKicker>
+    <div>
+      <CardKicker>Самые залайканные</CardKicker>
       <ol className={styles.messageList}>
-        {messages.map((m) => (
-          <li key={m.message_id} className={styles.messageRow}>
-            <span className={styles.messagePreview}>
-              {m.preview_text || m.content_label || "—"}
-            </span>
-            <div className={styles.messageMeta}>
+        {messages.map((m, i) => {
+          const text = m.preview_text || m.content_label || "—";
+          const href = linkable ? `https://t.me/c/${tgChatId}/${m.tg_msg_id}` : null;
+          const content = (
+            <>
+              <span className={styles.messageRank}>{i + 1}</span>
+              <span className={styles.messagePreview}>{text}</span>
               <span className={styles.messageAuthor}>{m.display_name || "Без имени"}</span>
-              {m.preview_text && m.content_label && (
-                <span className={styles.messageAuthor}>{m.content_label}</span>
+            </>
+          );
+          return (
+            <li key={m.message_id} className={styles.messageRow}>
+              {href ? (
+                <button
+                  type="button"
+                  className={styles.messageLink}
+                  onClick={() => void openUrl(href)}
+                  title="Открыть сообщение в Telegram"
+                >
+                  {content}
+                </button>
+              ) : (
+                <div className={styles.messageLink}>{content}</div>
               )}
-              {m.ts != null && (
-                <span className={styles.messageDate} title={formatFullDateTime(m.ts)}>
-                  {formatShortDate(m.ts)}
-                </span>
-              )}
-              <span className="num">{m.total_count.toLocaleString("ru-RU")}</span>
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ol>
-    </Card>
+    </div>
   );
 }

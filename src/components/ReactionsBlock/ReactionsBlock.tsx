@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, Skeleton, UnavailableCard } from "../ui";
 import { ReactionEmojiList } from "./ReactionEmojiList";
-import { ReactionPersonLists } from "./ReactionPersonLists";
+import { ReactionExchangeTable } from "./ReactionExchangeTable";
 import { ReactionPersonFilter } from "./ReactionPersonFilter";
 import { TopReactedMessages } from "./TopReactedMessages";
 import type { PersonRow, ReactionsOverview, TopReactedMessage } from "../../lib/types";
@@ -10,6 +10,8 @@ import styles from "./ReactionsBlock.module.css";
 
 interface ReactionsBlockProps {
   chatId: number;
+  chatType: string;
+  tgChatId: number | null;
   onReimport: () => void;
 }
 
@@ -17,12 +19,13 @@ interface ReactionsBlockProps {
 // invoke на каждый промежуточный chatId при быстром переключении чатов.
 const SWITCH_DEBOUNCE_MS = 150;
 
-// Блок «Реакции» (docs/SPEC.md §9 «Социальная динамика», первый срез —
-// агрегаты + given/received по персонам, без "кто чей фанат" и без
-// разбивки по времени, см. docs/PLAN.md). В отличие от «Типов сообщений»
-// у недоступности метрики два разных исхода — see ReactionsOverview в
-// lib/types.ts — с разным сообщением и разным (или отсутствующим) CTA.
-export function ReactionsBlock({ chatId, onReimport }: ReactionsBlockProps) {
+// Блок «Реакции» (docs/SPEC.md §9 «Социальная динамика») — переработан
+// под макет «Дашборд», ход t8/8a: сетка эмодзи, единая таблица «Обмен
+// реакциями», поисковый селект участника с диаграммой-весами. В отличие
+// от «Типов сообщений» у недоступности метрики два разных исхода — см.
+// ReactionsOverview в lib/types.ts — с разным сообщением и разным (или
+// отсутствующим) CTA.
+export function ReactionsBlock({ chatId, chatType, tgChatId, onReimport }: ReactionsBlockProps) {
   const [overview, setOverview] = useState<ReactionsOverview | null>(null);
   const [topMessages, setTopMessages] = useState<TopReactedMessage[] | null>(null);
   const [people, setPeople] = useState<PersonRow[] | null>(null);
@@ -88,6 +91,11 @@ export function ReactionsBlock({ chatId, onReimport }: ReactionsBlockProps) {
 
   return (
     <div className={styles.wrap}>
+      {overview.given_data_incomplete && (
+        <div className={styles.caveat}>
+          Часть реагировавших неизвестна — Telegram отдаёт в экспорте не полный список
+        </div>
+      )}
       <Card>
         <ReactionEmojiList
           topEmoji={overview.top_emoji}
@@ -96,15 +104,21 @@ export function ReactionsBlock({ chatId, onReimport }: ReactionsBlockProps) {
           totalMessages={overview.total_messages}
         />
       </Card>
-      <ReactionPersonLists
-        given={overview.given}
-        received={overview.received}
-        givenDataIncomplete={overview.given_data_incomplete}
-      />
-      {people && people.length > 0 && (
-        <ReactionPersonFilter chatId={chatId} people={people} onReimport={onReimport} />
+      {overview.exchange.length > 0 && (
+        <Card>
+          <ReactionExchangeTable rows={overview.exchange} />
+        </Card>
       )}
-      {topMessages && topMessages.length > 0 && <TopReactedMessages messages={topMessages} />}
+      {people && people.length > 0 && (
+        <Card>
+          <ReactionPersonFilter chatId={chatId} people={people} onReimport={onReimport} />
+        </Card>
+      )}
+      {topMessages && topMessages.length > 0 && (
+        <Card>
+          <TopReactedMessages messages={topMessages} chatType={chatType} tgChatId={tgChatId} />
+        </Card>
+      )}
     </div>
   );
 }

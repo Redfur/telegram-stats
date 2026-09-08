@@ -142,10 +142,21 @@ export interface ReactionEmojiCount {
   count: number;
 }
 
-export interface ReactionPersonCount {
+export interface ReactionEmojiRef {
+  kind: string;
+  emoji: string | null;
+  document_id: string | null;
+}
+
+export interface ReactionExchangeRow {
   person_id: number;
   display_name: string | null;
-  count: number;
+  given_count: number;
+  /** Точное число — считается по авторитетному `count`, не по `recent`. */
+  received_count: number;
+  /** Самый частый тип реакции, который ставит этот участник — `null`, если
+   *  не ставил вовсе или все его реакции посчитаны до миграции 0009. */
+  favorite_given: ReactionEmojiRef | null;
 }
 
 export interface ReactionsSummary {
@@ -153,10 +164,9 @@ export interface ReactionsSummary {
   reacted_message_count: number;
   total_messages: number;
   top_emoji: ReactionEmojiCount[];
-  given: ReactionPersonCount[];
-  /** Точное число — считается по авторитетному `count`, не по `recent`. */
-  received: ReactionPersonCount[];
-  /** `true` — `given` занижен: `recent` в экспорте несёт не всех реагировавших. */
+  /** Топ-8 по суммарной активности (даёт + получает) — таблица «Обмен реакциями». */
+  exchange: ReactionExchangeRow[];
+  /** `true` — given занижен: `recent` в экспорте несёт не всех реагировавших. */
   given_data_incomplete: boolean;
 }
 
@@ -169,6 +179,8 @@ export type ReactionsOverview =
 
 export interface TopReactedMessage {
   message_id: number;
+  /** Telegram-id сообщения — для ссылки `t.me/c/<tg_chat_id>/<tg_msg_id>`. */
+  tg_msg_id: number;
   person_id: number | null;
   display_name: string | null;
   ts: number | null;
