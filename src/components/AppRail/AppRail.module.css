@@ -65,3 +65,10 @@
 .navItem:hover { color: var(--text); }
 .navItem:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .active { color: var(--accent); }
+.disabled { cursor: default; color: var(--text-faint); }
+
+.version {
+  padding: var(--sp-3) var(--sp-6) var(--sp-5);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}

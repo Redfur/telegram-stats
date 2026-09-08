@@ -1,24 +1,23 @@
+import { NavLink, useMatch } from "react-router-dom";
 import type { ChatSummary } from "../../lib/types";
+import { useAppVersion } from "../../hooks/useAppVersion";
 import styles from "./AppRail.module.css";
 
-export type NavTarget = "library" | "people" | "import" | "slides";
-
-const NAV_ITEMS: { target: NavTarget; label: string }[] = [
-  { target: "library", label: "Библиотека" },
-  { target: "people", label: "Участники" },
-  { target: "import", label: "Импорт" },
-  { target: "slides", label: "Слайды" },
-];
-
-interface AppRailProps {
-  activeNav: NavTarget;
-  onNavigate: (target: NavTarget) => void;
-  chats: ChatSummary[];
-  activeChatId: number | null;
-  onSelectChat: (id: number) => void;
+function navClassName({ isActive }: { isActive: boolean }) {
+  return [styles.navItem, isActive ? styles.active : ""].filter(Boolean).join(" ");
 }
 
-export function AppRail({ activeNav, onNavigate, chats, activeChatId, onSelectChat }: AppRailProps) {
+interface AppRailProps {
+  chats: ChatSummary[];
+}
+
+export function AppRail({ chats }: AppRailProps) {
+  // Чат сейчас открыт (дашборд или его же «Участники») — только тогда
+  // пункт «Участники» вообще куда-то ведёт, см. docs/PLAN.md.
+  const chatMatch = useMatch("/chats/:chatId/*");
+  const openChatId = chatMatch?.params.chatId ?? null;
+  const version = useAppVersion();
+
   return (
     <div className={styles.rail}>
       <div className={styles.brand}>TG&nbsp;/&nbsp;ARCHIVE</div>
@@ -30,41 +29,40 @@ export function AppRail({ activeNav, onNavigate, chats, activeChatId, onSelectCh
       ) : (
         <div className={styles.chatList}>
           {chats.map((chat) => (
-            <button
+            <NavLink
               key={chat.id}
-              type="button"
-              className={[styles.chatItem, chat.id === activeChatId ? styles.active : ""].filter(Boolean).join(" ")}
-              aria-current={chat.id === activeChatId ? "page" : undefined}
-              onClick={() => onSelectChat(chat.id)}
+              to={`/chats/${chat.id}`}
+              className={({ isActive }) => [styles.chatItem, isActive ? styles.active : ""].filter(Boolean).join(" ")}
             >
               <div className={styles.chatName}>{chat.name || "Без названия"}</div>
               <div className={styles.chatMeta}>
                 {chat.chat_type} · {chat.message_count.toLocaleString("ru-RU")}
               </div>
-            </button>
+            </NavLink>
           ))}
         </div>
       )}
       <nav className={styles.nav}>
-        {NAV_ITEMS.map((item) => {
-          // «Участники» — единственный пункт, который остаётся активным
-          // вместе с открытым чатом (макет 3d/3e: чат в списке и пункт
-          // нава подсвечены одновременно). Остальные — самостоятельные
-          // экраны, открытый чат их подсветку гасит.
-          const isActive = item.target === activeNav && (item.target === "people" || activeChatId == null);
-          return (
-            <button
-              key={item.target}
-              type="button"
-              className={[styles.navItem, isActive ? styles.active : ""].filter(Boolean).join(" ")}
-              aria-current={isActive ? "page" : undefined}
-              onClick={() => onNavigate(item.target)}
-            >
-              {item.label}
-            </button>
-          );
-        })}
+        <NavLink to="/" end className={navClassName}>
+          Библиотека
+        </NavLink>
+        {openChatId != null ? (
+          <NavLink to={`/chats/${openChatId}/participants`} className={navClassName}>
+            Участники
+          </NavLink>
+        ) : (
+          <span className={[styles.navItem, styles.disabled].join(" ")} title="Сначала откройте чат слева">
+            Участники
+          </span>
+        )}
+        <NavLink to="/import" className={navClassName}>
+          Импорт
+        </NavLink>
+        <NavLink to="/slides" className={navClassName}>
+          Слайды
+        </NavLink>
       </nav>
+      {version && <div className={styles.version}>v{version}</div>}
     </div>
   );
 }

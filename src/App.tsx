@@ -1,8 +1,10 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useState } from "react";
+import { Routes, Route, Navigate, useNavigate, useParams } from "react-router-dom";
 import { AppShell } from "./components/AppShell/AppShell";
-import { AppRail, type NavTarget } from "./components/AppRail/AppRail";
+import { AppRail } from "./components/AppRail/AppRail";
 import { LibraryEmptyState } from "./screens/Library/LibraryEmptyState";
 import { Library } from "./screens/Library/Library";
+import { Import } from "./screens/Import/Import";
 import { ComingSoon } from "./screens/ComingSoon/ComingSoon";
 import { Dashboard } from "./screens/Dashboard/Dashboard";
 import { Participants } from "./screens/Participants/Participants";
@@ -12,15 +14,29 @@ import { useDeleteChat } from "./hooks/useDeleteChat";
 import { usePeopleReview } from "./hooks/usePeopleReview";
 import { ImportFlowOverlay } from "./components/ImportFlow/ImportFlowOverlay";
 import { ParticipantReviewStep } from "./components/ImportFlow/ParticipantReviewStep";
+import type { ChatSummary } from "./lib/types";
 
-const STUB_TITLES: Record<Exclude<NavTarget, "library" | "people">, string> = {
-  import: "Импорт",
-  slides: "Слайды",
-};
+function DashboardRoute({ chats, onReimport }: { chats: ChatSummary[]; onReimport: () => void }) {
+  const { chatId } = useParams();
+  const id = Number(chatId);
+  // Чат мог быть удалён из другой вкладки состояния (например, повторный
+  // клик «Удалить» на LibraryCard, пока эта же ссылка ещё жила в рельсе)
+  // — сюда мы попадаем, только когда id уже есть в списке (см. handleSelectChat/
+  // handleImported), но список асинхронный, так что подстрахуемся.
+  if (!chats.some((c) => c.id === id)) return <Navigate to="/" replace />;
+  return <Dashboard chatId={id} onReimport={onReimport} />;
+}
+
+function ParticipantsRoute({ chats }: { chats: ChatSummary[] }) {
+  const { chatId } = useParams();
+  const id = Number(chatId);
+  const chat = chats.find((c) => c.id === id);
+  if (!chat) return <Navigate to="/" replace />;
+  return <Participants chatId={id} chatName={chat.name} />;
+}
 
 function App() {
-  const [activeNav, setActiveNav] = useState<NavTarget>("library");
-  const [openChatId, setOpenChatId] = useState<number | null>(null);
+  const navigate = useNavigate();
   const [reviewChatId, setReviewChatId] = useState<number | null>(null);
   const { chats, refresh } = useChats();
 
@@ -39,77 +55,49 @@ function App() {
   const { deleteChat } = useDeleteChat();
   const { people, merge, hide, rename } = usePeopleReview(reviewChatId);
 
-  function handleNavigate(target: NavTarget) {
-    // «Участники» — экран для уже открытого чата (макет 3d/3e: чат в
-    // рельсе и пункт нава подсвечены одновременно), закрывать чат при
-    // переходе на него не нужно. Остальные пункты — самостоятельные
-    // экраны, чат для них закрывается.
-    if (target !== "people") {
-      setOpenChatId(null);
-    }
-    setActiveNav(target);
-  }
-
   function handleSelectChat(id: number) {
-    setOpenChatId(id);
-    // Клик по чату в рельсе всегда открывает его дашборд, даже если
-    // до этого был открыт экран «Участники» — так остаётся понятный
-    // путь назад к дашборду (повторный клик по тому же чату).
-    setActiveNav("library");
+    navigate(`/chats/${id}`);
   }
 
   async function handleDeleteChat(id: number) {
     await deleteChat(id);
     await refresh();
-    setOpenChatId((current) => (current === id ? null : current));
     setReviewChatId((current) => (current === id ? null : current));
   }
 
   function finishReview() {
-    if (reviewChatId != null) setOpenChatId(reviewChatId);
+    if (reviewChatId != null) navigate(`/chats/${reviewChatId}`);
     setReviewChatId(null);
   }
 
-  const openChat = openChatId != null ? chats.find((c) => c.id === openChatId) ?? null : null;
-
-  let mainContent: ReactNode;
-  if (activeNav === "people" && openChatId != null) {
-    mainContent = <Participants chatId={openChatId} chatName={openChat?.name ?? null} />;
-  } else if (openChatId != null) {
-    mainContent = <Dashboard chatId={openChatId} onReimport={importFile} />;
-  } else if (activeNav === "library") {
-    mainContent =
-      chats.length > 0 ? (
-        <Library
-          chats={chats}
-          onImport={importFile}
-          isImporting={isImporting}
-          error={error?.message ?? null}
-          onSelectChat={handleSelectChat}
-          onDelete={handleDeleteChat}
-        />
-      ) : (
-        <LibraryEmptyState onPickFile={importFile} isImporting={isImporting} error={error?.message ?? null} />
-      );
-  } else if (activeNav === "people") {
-    mainContent = <ComingSoon title="Участники" message="Выберите чат слева, чтобы посмотреть участников" />;
-  } else {
-    mainContent = <ComingSoon title={STUB_TITLES[activeNav]} />;
-  }
-
   return (
-    <AppShell
-      rail={
-        <AppRail
-          activeNav={activeNav}
-          onNavigate={handleNavigate}
-          chats={chats}
-          activeChatId={openChatId}
-          onSelectChat={handleSelectChat}
+    <AppShell rail={<AppRail chats={chats} />}>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            chats.length > 0 ? (
+              <Library
+                chats={chats}
+                onImport={importFile}
+                isImporting={isImporting}
+                error={error?.message ?? null}
+                onSelectChat={handleSelectChat}
+                onDelete={handleDeleteChat}
+              />
+            ) : (
+              <LibraryEmptyState onPickFile={importFile} isImporting={isImporting} error={error?.message ?? null} />
+            )
+          }
         />
-      }
-    >
-      {mainContent}
+        <Route path="/chats/:chatId" element={<DashboardRoute chats={chats} onReimport={importFile} />} />
+        <Route path="/chats/:chatId/participants" element={<ParticipantsRoute chats={chats} />} />
+        <Route
+          path="/import"
+          element={<Import onPickFile={importFile} isImporting={isImporting} error={error?.message ?? null} />}
+        />
+        <Route path="/slides" element={<ComingSoon title="Слайды" />} />
+      </Routes>
       <ImportFlowOverlay
         progress={progress}
         error={error}
