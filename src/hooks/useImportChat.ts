@@ -4,7 +4,10 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { ChatSummary } from "../lib/types";
 
+export type ImportPhase = "reading" | "finalizing";
+
 export interface ImportProgress {
+  phase: ImportPhase;
   bytes_read: number;
   total_bytes: number | null;
   message_count: number;

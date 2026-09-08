@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 
 use rusqlite::{params, Connection};
-use telegram_stats_lib::db::{self, import_into_db, ImportContext};
+use telegram_stats_lib::db::{self, import_into_db, ImportContext, ImportPhase, ImportProgress};
 use telegram_stats_lib::import::{parse_export, ImportError, ParsedEvent};
 use telegram_stats_lib::metrics::{
     get_activity_series, get_chat_totals, get_message_type_detail, get_message_type_overview,
@@ -62,6 +62,55 @@ fn import_with_size(conn: &mut Connection, name: &str, size: Option<i64>) -> db:
         cancel: &cancel,
     };
     import_into_db(conn, file, name, size, &mut ctx).expect("import should succeed")
+}
+
+#[test]
+fn import_reports_finalizing_exactly_once_after_all_reading_events() {
+    // Фронт крутит "подсчитываем..."-подписи, пока фаза Finalizing — она
+    // должна прийти ровно один раз, строго после всех Reading-событий
+    // (иначе фронт мог бы решить, что чтение файла ещё не кончилось), и
+    // с уже финальными message_count/people_count, а не промежуточными.
+    let mut conn = fresh_db();
+    let file = File::open(fixture("group_50_members.json")).expect("fixture file should exist");
+    let bytes_read = AtomicU64::new(0);
+    let cancel = AtomicBool::new(false);
+    let mut phases: Vec<ImportProgress> = Vec::new();
+    let mut ctx = ImportContext {
+        bytes_read: &bytes_read,
+        on_progress: |p: ImportProgress| phases.push(p),
+        cancel: &cancel,
+    };
+    let summary = import_into_db(&mut conn, file, "group_50_members.json", None, &mut ctx)
+        .expect("import should succeed");
+
+    let finalizing_count = phases
+        .iter()
+        .filter(|p| p.phase == ImportPhase::Finalizing)
+        .count();
+    assert_eq!(
+        finalizing_count, 1,
+        "Finalizing must be reported exactly once"
+    );
+
+    let finalizing_index = phases
+        .iter()
+        .position(|p| p.phase == ImportPhase::Finalizing)
+        .unwrap();
+    assert!(
+        phases[..finalizing_index]
+            .iter()
+            .all(|p| p.phase == ImportPhase::Reading),
+        "every event before Finalizing must be Reading, not interleaved"
+    );
+    assert_eq!(
+        finalizing_index,
+        phases.len() - 1,
+        "Finalizing must be the last progress event"
+    );
+
+    let finalizing = &phases[finalizing_index];
+    assert_eq!(finalizing.message_count, summary.message_count);
+    assert_eq!(finalizing.people_count, summary.participant_count);
 }
 
 #[test]

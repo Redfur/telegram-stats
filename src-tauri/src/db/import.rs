@@ -55,8 +55,21 @@ impl<R: Read> Read for CountingReader<R> {
     }
 }
 
+/// `Reading` — процент честно считается по байтам файла. `Finalizing` —
+/// файл уже дочитан, но перед коммитом остаются агрегации (участники,
+/// precompute-метрики дашборда/типов сообщений), у которых нет
+/// измеримого «процента» — фронт должен показать это отдельным
+/// состоянием (крутящиеся подписи), а не застрявшим «100%».
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportPhase {
+    Reading,
+    Finalizing,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ImportProgress {
+    pub phase: ImportPhase,
     pub bytes_read: u64,
     pub total_bytes: Option<i64>,
     pub message_count: i64,
@@ -230,6 +243,7 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
             }
 
             (ctx.on_progress)(ImportProgress {
+                phase: ImportPhase::Reading,
                 bytes_read: ctx.bytes_read.load(Ordering::Relaxed),
                 total_bytes: source_file_size,
                 message_count,
@@ -239,6 +253,18 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
             Ok(())
         })?
     };
+
+    // Файл дочитан — дальше алиасы/реимпорт-дедуп/precompute-агрегации
+    // (recompute_dashboard_metrics/recompute_message_type_metrics ниже),
+    // без измеримого прогресса по байтам. Один сигнал смены фазы,
+    // дальше фронт сам крутит подписи по таймеру.
+    (ctx.on_progress)(ImportProgress {
+        phase: ImportPhase::Finalizing,
+        bytes_read: ctx.bytes_read.load(Ordering::Relaxed),
+        total_bytes: source_file_size,
+        message_count,
+        people_count: people_cache.len() as i64,
+    });
 
     {
         let mut insert_alias = tx

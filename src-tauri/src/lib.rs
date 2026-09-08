@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{Emitter, Manager};
 
-use db::{ChatSummary, CountingReader, Db, ImportContext, ImportProgress, PersonRow};
+use db::{ChatSummary, CountingReader, Db, ImportContext, ImportPhase, ImportProgress, PersonRow};
 use import::ImportError;
 use metrics::{
     ActivitySeries, ChatTotals, MessageTypeDetail, MessageTypeKind, MessageTypeOverview,
@@ -79,7 +79,11 @@ async fn import_chat(
 
         let mut last_emit = Instant::now();
         let on_progress = |p: ImportProgress| {
-            if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
+            // Смена фазы шлётся всегда, throttle её не съедает — иначе
+            // фронт мог не узнать, что чтение файла кончилось и дальше
+            // идёт время без измеримого процента (docs/PLAN.md).
+            let force = p.phase == ImportPhase::Finalizing;
+            if force || last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
                 let _ = app.emit("ingest://progress", p);
                 last_emit = Instant::now();
             }

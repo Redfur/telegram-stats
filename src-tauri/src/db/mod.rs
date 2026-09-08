@@ -1,7 +1,7 @@
 mod import;
 mod people;
 
-pub use import::{import_into_db, CountingReader, ImportContext, ImportProgress};
+pub use import::{import_into_db, CountingReader, ImportContext, ImportPhase, ImportProgress};
 pub use people::{get_people, hide_person, merge_people, rename_person, PersonRow};
 
 use std::path::Path;
