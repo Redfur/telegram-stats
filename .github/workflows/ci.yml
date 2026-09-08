@@ -29,8 +29,8 @@ jobs:
 
       - run: pnpm build
 
-  rust:
-    name: Rust (fmt + clippy + test)
+  rust-lint:
+    name: Rust (fmt + clippy)
     runs-on: windows-latest
     defaults:
       run:
@@ -49,5 +49,20 @@ jobs:
       - run: cargo fmt --check
 
       - run: cargo clippy --all-targets -- -D warnings
+
+  rust-test:
+    name: Rust (test)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
 
       - run: cargo test
