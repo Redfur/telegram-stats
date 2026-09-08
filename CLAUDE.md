@@ -251,10 +251,20 @@ ETA в прогрессе импорта, параллельные импорт�
 требованию из §4 `docs/SPEC.md`).
 
 CI в `.github/workflows/`: `ci.yml` (push в `main` и PR) гоняет тайпчек +
-`vite build` фронта на `ubuntu-latest` и `cargo fmt --check`/`cargo clippy
--D warnings`/`cargo test` на `windows-latest` — Rust-джобу держим на
-Windows, а не Linux, чтобы не тащить в CI `libwebkit2gtk`/GTK-зависимости
-Tauri под таргет, который всё равно не собираем; `build.yml` —
+`vite build` фронта и `cargo fmt --check`/`cargo clippy -D warnings`/
+`cargo test` Rust-части — всё на `ubuntu-latest` (Rust-джобы разбиты на
+`rust-lint`/`rust-test` и идут параллельно друг другу и фронту, а не
+последовательно в одной джобе: у `cargo clippy` свой rustc-wrapper,
+из-за которого он не переиспользует кэш `cargo test` — при
+последовательном запуске в одной джобе граф зависимостей компилировался
+дважды подряд). `ubuntu-latest` вместо `windows-latest` — Linux-раннер
+компилирует Rust заметно быстрее (без антивирус-сканирования на лету) и
+стоит 1x минут CI против 2x на Windows; ставит `libwebkit2gtk-4.1-dev`
+и остальные Tauri-зависимости для Linux через `apt` — код кроссплатформенный,
+без `#[cfg(windows)]`-веток, так что компиляция под другую ОС не теряет
+покрытие тестами, а гипотетическую MSVC-only ошибку компиляции всё равно
+поймают `build.yml`/`release.yml`, которые остаются на `windows-latest`,
+потому что собирают реальный шипуемый бинарник; `build.yml` —
 собственно Windows-сборка (`pnpm tauri build`), но только по ручному
 `workflow_dispatch`, артефакт (NSIS-инсталлятор) уходит в
 `actions/upload-artifact` на 14 дней, без публикации. Перед сборкой
