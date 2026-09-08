@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, UnavailableCard } from "../ui";
+import { Card, Skeleton, UnavailableCard } from "../ui";
 import { MessageTypeToggle } from "./MessageTypeToggle";
 import { MessageTypeSummary } from "./MessageTypeSummary";
 import { MessageTypesChart } from "./MessageTypesChart";
@@ -19,6 +19,10 @@ interface MessageTypesBlockProps {
   onReimport: () => void;
 }
 
+// Та же логика, что и в Dashboard.tsx — не бить invoke на каждый
+// промежуточный chatId при быстром переключении чатов в рельсе.
+const SWITCH_DEBOUNCE_MS = 150;
+
 // Универсальный блок «Типы сообщений» (макет «Дашборд», ход t6) — секция
 // 03 дашборда. 12 типов на этот срез, без реакций (docs/PLAN.md — своя
 // таблица, отдельный будущий срез).
@@ -31,6 +35,10 @@ export function MessageTypesBlock({ chatId, onReimport }: MessageTypesBlockProps
   // каждом ответе, иначе смена типа сбрасывала бы выбор пользователя.
   const [requestedView, setRequestedView] = useState<TypeTimeView | null>(null);
   const [detail, setDetail] = useState<MessageTypeDetail | null>(null);
+  // Пока грузится новый detail, старый остаётся на экране (меньше
+  // мигания при переключении типа/вида) — этот флаг только подсвечивает
+  // карточку как "обновляется", не прячет её содержимое.
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,26 +46,32 @@ export function MessageTypesBlock({ chatId, onReimport }: MessageTypesBlockProps
     setSelectedKind(null);
     setRequestedView(null);
     setDetail(null);
-    invoke<MessageTypeOverview>("get_message_type_overview", { chatId }).then((r) => {
-      if (cancelled) return;
-      setOverview(r);
-      const top = [...r.counts].filter((c) => c.count > 0).sort((a, b) => b.count - a.count)[0];
-      if (top) setSelectedKind(top.kind);
-    });
+    const timer = setTimeout(() => {
+      invoke<MessageTypeOverview>("get_message_type_overview", { chatId }).then((r) => {
+        if (cancelled) return;
+        setOverview(r);
+        const top = [...r.counts].filter((c) => c.count > 0).sort((a, b) => b.count - a.count)[0];
+        if (top) setSelectedKind(top.kind);
+      });
+    }, SWITCH_DEBOUNCE_MS);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [chatId]);
 
   useEffect(() => {
     if (selectedKind == null) return;
     let cancelled = false;
+    setDetailLoading(true);
     invoke<MessageTypeDetail | null>("get_message_type_detail", {
       chatId,
       kind: selectedKind,
       view: requestedView,
     }).then((r) => {
-      if (!cancelled) setDetail(r);
+      if (cancelled) return;
+      setDetail(r);
+      setDetailLoading(false);
     });
     return () => {
       cancelled = true;
@@ -69,7 +83,16 @@ export function MessageTypesBlock({ chatId, onReimport }: MessageTypesBlockProps
     setRequestedView(null);
   }
 
-  if (overview == null) return null;
+  if (overview == null) {
+    return (
+      <div className={styles.wrap} aria-busy="true">
+        <Skeleton height={32} width="70%" />
+        <Card>
+          <Skeleton height={140} />
+        </Card>
+      </div>
+    );
+  }
 
   if (!overview.available) {
     return (
@@ -89,8 +112,16 @@ export function MessageTypesBlock({ chatId, onReimport }: MessageTypesBlockProps
   return (
     <div className={styles.wrap}>
       <MessageTypeToggle counts={overview.counts} selected={selectedKind} onSelect={handleSelectKind} />
-      {detail && (
+      {detail == null && detailLoading && (
         <Card>
+          <Skeleton height={140} />
+        </Card>
+      )}
+      {detail && (
+        <Card
+          className={detailLoading ? styles.updating : undefined}
+          aria-busy={detailLoading || undefined}
+        >
           <MessageTypeSummary
             kind={detail.kind}
             totalCount={detail.total_count}

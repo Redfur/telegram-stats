@@ -7,3 +7,4 @@ export { Tag } from "./Tag/Tag";
 export { DataTable } from "./DataTable/DataTable";
 export { ConfirmDialog } from "./ConfirmDialog/ConfirmDialog";
 export { UnavailableCard } from "./UnavailableCard/UnavailableCard";
+export { Skeleton } from "./Skeleton/Skeleton";

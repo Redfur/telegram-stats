@@ -9,3 +9,8 @@
   color: var(--text-muted);
   text-align: center;
 }
+
+.updating {
+  opacity: 0.6;
+  transition: opacity 120ms ease-out;
+}

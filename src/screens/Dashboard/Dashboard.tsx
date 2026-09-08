@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Card } from "../../components/ui";
+import { Card, Skeleton } from "../../components/ui";
 import { StatTile } from "../../components/StatTile/StatTile";
 import { ActivityChart } from "../../components/ActivityChart/ActivityChart";
 import { ParticipantsTable } from "../../components/ParticipantsTable/ParticipantsTable";
@@ -12,6 +12,12 @@ interface DashboardProps {
   chatId: number;
   onReimport: () => void;
 }
+
+// Быстрое переключение между чатами в рельсе не должно бить invoke на
+// каждый промежуточный chatId — только на тот, где пользователь
+// задержался (ниже человеческого восприятия задержки клика, но выше
+// типичного интервала между кликами при скролле по списку).
+const SWITCH_DEBOUNCE_MS = 150;
 
 // Разделы 00/01/02/03 макета «Дашборд» (вариант 2a: 00 сводка, 01
 // активность, 02 кто писал) + ход t6 (03 типы сообщений) — остальные
@@ -27,17 +33,20 @@ export function Dashboard({ chatId, onReimport }: DashboardProps) {
     setTotals(null);
     setActivity(null);
     setParticipants(null);
-    invoke<ChatTotals | null>("get_chat_totals", { chatId }).then((r) => {
-      if (!cancelled) setTotals(r);
-    });
-    invoke<ActivitySeries | null>("get_activity_series", { chatId }).then((r) => {
-      if (!cancelled) setActivity(r);
-    });
-    invoke<TopParticipants>("get_top_participants", { chatId }).then((r) => {
-      if (!cancelled) setParticipants(r);
-    });
+    const timer = setTimeout(() => {
+      invoke<ChatTotals | null>("get_chat_totals", { chatId }).then((r) => {
+        if (!cancelled) setTotals(r);
+      });
+      invoke<ActivitySeries | null>("get_activity_series", { chatId }).then((r) => {
+        if (!cancelled) setActivity(r);
+      });
+      invoke<TopParticipants>("get_top_participants", { chatId }).then((r) => {
+        if (!cancelled) setParticipants(r);
+      });
+    }, SWITCH_DEBOUNCE_MS);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [chatId]);
 
@@ -54,13 +63,23 @@ export function Dashboard({ chatId, onReimport }: DashboardProps) {
           <span className="kick">00</span>
           <span className="sec">СВОДКА</span>
         </div>
-        {totals && (
-          <div className={styles.tiles}>
-            <StatTile kicker="Сообщений" value={totals.message_count.toLocaleString("ru-RU")} />
-            <StatTile kicker="В день" value={perDay != null ? perDay.toLocaleString("ru-RU") : "—"} />
-            <StatTile kicker="Участников" value={totals.participant_count.toLocaleString("ru-RU")} />
-          </div>
-        )}
+        <div className={styles.tiles}>
+          <StatTile
+            kicker="Сообщений"
+            value={totals?.message_count.toLocaleString("ru-RU")}
+            loading={!totals}
+          />
+          <StatTile
+            kicker="В день"
+            value={perDay != null ? perDay.toLocaleString("ru-RU") : "—"}
+            loading={!totals}
+          />
+          <StatTile
+            kicker="Участников"
+            value={totals?.participant_count.toLocaleString("ru-RU")}
+            loading={!totals}
+          />
+        </div>
       </section>
 
       <section>
@@ -69,8 +88,10 @@ export function Dashboard({ chatId, onReimport }: DashboardProps) {
           <span className="sec">АКТИВНОСТЬ</span>
           <span className={styles.caveat}>время — по UTC, часовой пояс исходного экспорта неизвестен</span>
         </div>
-        <Card>
-          {activity && activity.buckets.length > 0 ? (
+        <Card aria-busy={activity === null || undefined}>
+          {activity === null ? (
+            <Skeleton height={160} />
+          ) : activity.buckets.length > 0 ? (
             <ActivityChart buckets={activity.buckets} granularity={activity.granularity} />
           ) : (
             <div className={styles.empty}>Недостаточно данных для графика</div>
@@ -83,19 +104,27 @@ export function Dashboard({ chatId, onReimport }: DashboardProps) {
           <span className="kick">02</span>
           <span className="sec">КТО ПИСАЛ</span>
         </div>
-        {participants &&
-          (participants.degenerate ? (
-            <div className={styles.ratio}>
-              {participants.participants.map((p) => (
-                <div key={p.person_id} className={styles.ratioRow}>
-                  <span>{p.display_name || "Без имени"}</span>
-                  <span className="num">{p.message_count.toLocaleString("ru-RU")}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <ParticipantsTable participants={participants.participants} />
-          ))}
+        {participants === null ? (
+          <div className={styles.ratio} aria-busy="true">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className={styles.ratioRow}>
+                <Skeleton width="40%" />
+                <Skeleton width="15%" />
+              </div>
+            ))}
+          </div>
+        ) : participants.degenerate ? (
+          <div className={styles.ratio}>
+            {participants.participants.map((p) => (
+              <div key={p.person_id} className={styles.ratioRow}>
+                <span>{p.display_name || "Без имени"}</span>
+                <span className="num">{p.message_count.toLocaleString("ru-RU")}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <ParticipantsTable participants={participants.participants} />
+        )}
       </section>
 
       <section>
