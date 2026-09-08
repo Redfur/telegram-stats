@@ -57,6 +57,10 @@ pub fn open_and_migrate(path: &Path) -> rusqlite::Result<Connection> {
         conn.execute_batch(include_str!("migrations/0005_dashboard_precompute.sql"))?;
         conn.pragma_update(None, "user_version", 5)?;
     }
+    if version < 6 {
+        conn.execute_batch(include_str!("migrations/0006_message_type_precompute.sql"))?;
+        conn.pragma_update(None, "user_version", 6)?;
+    }
 
     Ok(conn)
 }

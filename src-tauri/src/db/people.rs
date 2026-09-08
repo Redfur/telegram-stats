@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection};
 
-use crate::metrics::recompute_dashboard_metrics;
+use crate::metrics::{recompute_dashboard_metrics, recompute_message_type_participant_stats};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PersonRow {
@@ -68,11 +68,13 @@ pub fn get_people(conn: &Connection, chat_id: i64) -> rusqlite::Result<Vec<Perso
 /// фильтра по chat_id».
 ///
 /// Физически переносит `messages.person_id` на `primary_id` — из-за этого
-/// предвычисленная по сырому `person_id` `person_message_stats`
-/// (`metrics::precompute`) перестаёт соответствовать `messages`, поэтому
-/// в конце пересчитываем её целиком (дёшево: слияние — редкое, явное
-/// действие пользователя из экрана «Участники», не часть пути открытия
-/// дашборда, который этот пересчёт как раз избавляет от полного скана).
+/// предвычисленные по сырому `person_id` `person_message_stats`
+/// (`metrics::precompute`) и `message_type_participant_stats`
+/// (`metrics::message_types`) перестают соответствовать `messages`,
+/// поэтому в конце пересчитываем обе целиком (дёшево: слияние — редкое,
+/// явное действие пользователя из экрана «Участники», не часть пути
+/// открытия дашборда, который этот пересчёт как раз избавляет от полного
+/// скана).
 pub fn merge_people(
     conn: &Connection,
     chat_id: i64,
@@ -100,6 +102,7 @@ pub fn merge_people(
         )?;
     }
     recompute_dashboard_metrics(conn, chat_id)?;
+    recompute_message_type_participant_stats(conn, chat_id)?;
     Ok(())
 }
 

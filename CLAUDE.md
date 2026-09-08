@@ -151,10 +151,20 @@ time-series метрикой. `participant_count` в `get_chat_totals`/
 `primary_id`, из-за чего `person_message_stats` пересчитывается сразу
 после слияния — единственное место вне импорта, где precomputed-данные
 могут разойтись с `messages` (`hide_person`/`rename_person` таблиц не
-касаются, они только правят `people`). Разбор типов сообщений
-(`message_type_overview`/`detail`) пока остаётся на живых запросах —
-следующий срез той же оптимизации. 42 Rust-теста зелёные, `cargo clippy`
-чист.
+касаются, они только правят `people`). Та же оптимизация докатана и на
+`message_types.rs` — `recompute_message_type_metrics` считает
+`message_type_counts`/`message_type_time_buckets`/`message_type_durations`/
+`message_type_participant_stats` (13 типов) один раз в конце импорта;
+`get_message_type_overview`/`get_message_type_detail` читают готовые
+строки вместо пяти последовательных сканов `messages` на каждый клик по
+пилюле. Self-heal здесь ключуется не на отдельном флаге, а на
+существовании строк в `message_type_counts` (пересчёт всегда пишет все
+13, включая нулевые — пусто однозначно значит «не посчитано») и
+срабатывает только при `message_types_ready = 1`, иначе поведение не
+меняется (`UnavailableCard`, как и раньше). `merge_people` дополнительно
+пересчитывает `message_type_participant_stats` (единственная
+person-keyed таблица в этой группе) тем же приёмом, что и
+`person_message_stats`. 45 Rust-тестов зелёные, `cargo clippy` чист.
 ETA в прогрессе импорта, параллельные импорты, явный выбор при конфликте
 `tg_chat_id` без `id` в старом экспорте, авто-детект дублей/ботов в шаге
 разбора участников и остальные метрики из SPEC §9 — сознательно не в

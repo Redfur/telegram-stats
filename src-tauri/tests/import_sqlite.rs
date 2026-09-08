@@ -41,6 +41,10 @@ fn fresh_db() -> Connection {
         "../src/db/migrations/0005_dashboard_precompute.sql"
     ))
     .expect("apply migration 0005");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0006_message_type_precompute.sql"
+    ))
+    .expect("apply migration 0006");
     conn
 }
 
@@ -790,6 +794,142 @@ fn merging_people_keeps_person_message_stats_consistent_not_just_the_live_view()
     assert_eq!(
         stale_row_count, 0,
         "the merged-away person_id must not linger in the precomputed table"
+    );
+}
+
+#[test]
+fn precomputed_message_type_counts_match_a_live_scan() {
+    // Та же независимая сверка, что и для totals/activity/участников, но
+    // для message_type_counts — предикаты продублированы явно (как и в
+    // a_photo_with_a_caption_counts_as_both_photo_and_text), не через
+    // приватный predicate_sql.
+    for fixture_name in [
+        "three_day_chat.json",
+        "group_50_members.json",
+        "english_chat.json",
+    ] {
+        let mut conn = fresh_db();
+        let chat = import(&mut conn, fixture_name);
+
+        let overview = get_message_type_overview(&conn, chat.id).unwrap();
+        assert!(overview.available);
+        for c in &overview.counts {
+            let predicate = match c.kind {
+                MessageTypeKind::Text => "text_len > 0",
+                MessageTypeKind::Photo => "has_photo = 1",
+                MessageTypeKind::Sticker => "media_type = 'sticker'",
+                MessageTypeKind::VoiceMessage => "media_type = 'voice_message'",
+                MessageTypeKind::VideoMessage => "media_type = 'video_message'",
+                MessageTypeKind::VideoFile => "media_type = 'video_file'",
+                MessageTypeKind::Animation => "media_type = 'animation'",
+                MessageTypeKind::File => "has_file = 1",
+                MessageTypeKind::Forwarded => "forwarded_from IS NOT NULL",
+                MessageTypeKind::Edited => "edited_ts IS NOT NULL",
+                MessageTypeKind::Poll => "has_poll = 1",
+                MessageTypeKind::Location => "has_location = 1",
+                MessageTypeKind::Contact => "has_contact = 1",
+            };
+            let expected: i64 = conn
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM messages WHERE chat_id = ?1 AND {predicate}"),
+                    [chat.id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(
+                c.count, expected,
+                "{fixture_name}/{:?} count mismatch",
+                c.kind
+            );
+        }
+    }
+}
+
+#[test]
+fn message_type_metrics_self_heal_for_a_chat_marked_ready_before_this_precompute_existed() {
+    // message_types_ready=1 (сырые колонки типов уже заполнены — чат
+    // прошёл актуальный импортер), но message_type_counts никогда не
+    // считалась для этой строки (симулирует апгрейд: миграция 0006
+    // добавила таблицы, но строка chats старше этого среза). Это не
+    // "недоступно" (как chat_imported_before_the_message_types_migration_
+    // reports_unavailable, где ready=0) — первое чтение обязано лениво
+    // досчитать, а не тихо всегда отдавать нули.
+    let conn = fresh_db();
+    conn.execute(
+        "INSERT INTO chats (tg_chat_id, name, chat_type, imported_at, first_msg_ts, last_msg_ts, \
+         message_count, participant_count, message_types_ready) \
+         VALUES (1, 'Old chat', 'private_group', 0, 1000, 2000, 2, 1, 1)",
+        [],
+    )
+    .expect("insert pre-existing chat row");
+    let chat_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO people (chat_id, tg_person_id, display_name) VALUES (?1, 'user1', 'Alice')",
+        [chat_id],
+    )
+    .expect("insert pre-existing person row");
+    let person_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO messages (chat_id, tg_msg_id, person_id, ts, text_len, word_count, has_photo) \
+         VALUES (?1, 1, ?2, 1000, 5, 1, 1), (?1, 2, ?2, 2000, 0, 0, 0)",
+        params![chat_id, person_id],
+    )
+    .expect("insert pre-existing messages");
+
+    let has_rows_before: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM message_type_counts WHERE chat_id = ?1",
+            [chat_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        has_rows_before, 0,
+        "precompute must not have run yet for this pre-existing row"
+    );
+
+    let overview = get_message_type_overview(&conn, chat_id).unwrap();
+    assert!(overview.available);
+    let photo_count = overview
+        .counts
+        .iter()
+        .find(|c| c.kind == MessageTypeKind::Photo)
+        .unwrap()
+        .count;
+    assert_eq!(
+        photo_count, 1,
+        "must self-heal instead of reporting a stale zero"
+    );
+
+    let detail = get_message_type_detail(&conn, chat_id, MessageTypeKind::Photo, None)
+        .unwrap()
+        .expect("the one photo message must produce a detail");
+    assert_eq!(detail.total_count, 1);
+}
+
+#[test]
+fn merging_people_keeps_message_type_participant_stats_consistent() {
+    // Тот же приём, что и merging_people_keeps_person_message_stats_consistent_not_just_the_live_view,
+    // но для message_type_participant_stats: merge_people физически
+    // переносит messages.person_id, эта precomputed-таблица не должна
+    // держать строку под уже объединённым person_id ни под одним kind.
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "three_day_chat.json");
+    let people = people_ordered_by_name(&conn, chat.id);
+    let (primary, duplicate) = (&people[0], &people[1]);
+
+    db::merge_people(&conn, chat.id, primary.id, &[duplicate.id]).unwrap();
+
+    let stale_row_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM message_type_participant_stats WHERE person_id = ?1",
+            [duplicate.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        stale_row_count, 0,
+        "the merged-away person_id must not linger under any kind"
     );
 }
 

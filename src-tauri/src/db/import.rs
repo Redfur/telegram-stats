@@ -377,6 +377,7 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
     .map_err(db_err)?;
 
     crate::metrics::recompute_dashboard_metrics(&tx, chat_id).map_err(db_err)?;
+    crate::metrics::recompute_message_type_metrics(&tx, chat_id).map_err(db_err)?;
 
     tx.commit().map_err(db_err)?;
 

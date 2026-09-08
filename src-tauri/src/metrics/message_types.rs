@@ -1,4 +1,8 @@
+use std::collections::HashMap;
+
 use rusqlite::{params, Connection, OptionalExtension};
+
+use super::precompute::ensure_dashboard_ready;
 
 /// Разрез «тип сообщения» — одна раскладка на все счётные метрики (макет
 /// «Дашборд», ход `t6`). 13 типов на этот срез, без реакций/полноценной
@@ -73,6 +77,27 @@ impl MessageTypeKind {
             MessageTypeKind::VoiceMessage | MessageTypeKind::VideoMessage
         )
     }
+
+    /// Ключ строки в precomputed-таблицах (`message_type_*`) — не то же
+    /// самое, что `serde`-представление (то отдаёт JSON-строку в кавычках,
+    /// неудобно как значение TEXT-колонки), но то же самое написание.
+    fn as_key(self) -> &'static str {
+        match self {
+            MessageTypeKind::Text => "text",
+            MessageTypeKind::Photo => "photo",
+            MessageTypeKind::Sticker => "sticker",
+            MessageTypeKind::VoiceMessage => "voice_message",
+            MessageTypeKind::VideoMessage => "video_message",
+            MessageTypeKind::VideoFile => "video_file",
+            MessageTypeKind::Animation => "animation",
+            MessageTypeKind::File => "file",
+            MessageTypeKind::Forwarded => "forwarded",
+            MessageTypeKind::Edited => "edited",
+            MessageTypeKind::Poll => "poll",
+            MessageTypeKind::Location => "location",
+            MessageTypeKind::Contact => "contact",
+        }
+    }
 }
 
 /// Гранулярность гистограммы этого блока — три уровня, не пять, как у
@@ -104,7 +129,24 @@ impl TypeTimeView {
             TypeTimeView::HourOfDay => "strftime('%H', ts, 'unixepoch')",
         }
     }
+
+    /// Ключ `view` в `message_type_time_buckets` — то же написание, что и
+    /// у `serde`-представления, но без обёртки в JSON-строку.
+    fn as_key(self) -> &'static str {
+        match self {
+            TypeTimeView::Month => "month",
+            TypeTimeView::DayOfWeek => "day_of_week",
+            TypeTimeView::HourOfDay => "hour_of_day",
+        }
+    }
 }
+
+/// `rate_buckets` короткого чата (`RateGranularity::Day`) хранится под
+/// этим ключом `view` — `TypeTimeView` не предлагает «по дням» как
+/// самостоятельный вид гистограммы (только неделя/час), но темп/пик всё
+/// равно нужно на что-то опереться, когда «по месяцам» недоступен.
+const RATE_DAY_VIEW_KEY: &str = "rate_day";
+const RATE_MONTH_VIEW_KEY: &str = "month";
 
 /// Абсолютная гранулярность «темпа»/«пика» в карточке сводки — не путать
 /// с `TypeTimeView` (что сейчас выбрано для гистограммы). Это всегда
@@ -162,8 +204,9 @@ pub struct MessageTypeOverview {
     pub counts: Vec<MessageTypeCount>,
 }
 
-/// Сводные счётчики по всем 12 типам — один проход по `messages`, чтобы
-/// нарисовать ряд пилюль со счётчиками сразу при открытии блока.
+/// Сводные счётчики по всем 13 типам — читает `message_type_counts`
+/// (предвычислена, см. `recompute_message_type_metrics`), а не сканирует
+/// `messages` заново на каждое открытие блока.
 pub fn get_message_type_overview(
     conn: &Connection,
     chat_id: i64,
@@ -190,25 +233,20 @@ pub fn get_message_type_overview(
         });
     }
 
-    let case_columns: Vec<String> = MessageTypeKind::ALL
+    ensure_message_type_precomputed(conn, chat_id)?;
+
+    let mut stmt =
+        conn.prepare("SELECT kind, count FROM message_type_counts WHERE chat_id = ?1")?;
+    let by_key: HashMap<String, i64> = stmt
+        .query_map(params![chat_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let counts = MessageTypeKind::ALL
         .iter()
-        .map(|k| format!("SUM(CASE WHEN {} THEN 1 ELSE 0 END)", k.predicate_sql()))
+        .map(|kind| MessageTypeCount {
+            kind: *kind,
+            count: by_key.get(kind.as_key()).copied().unwrap_or(0),
+        })
         .collect();
-    let sql = format!(
-        "SELECT {} FROM messages WHERE chat_id = ?1",
-        case_columns.join(", ")
-    );
-    let counts = conn.query_row(&sql, params![chat_id], |row| {
-        let mut counts = Vec::with_capacity(MessageTypeKind::ALL.len());
-        for (i, kind) in MessageTypeKind::ALL.iter().enumerate() {
-            let count: Option<i64> = row.get(i)?;
-            counts.push(MessageTypeCount {
-                kind: *kind,
-                count: count.unwrap_or(0),
-            });
-        }
-        Ok(counts)
-    })?;
 
     Ok(MessageTypeOverview {
         available: true,
@@ -273,9 +311,14 @@ fn median(sorted_ascending: &[i64]) -> f64 {
     }
 }
 
-/// Разбор одного типа: сводка + гистограмма + таблица участников.
+/// Разбор одного типа: сводка + гистограмма + таблица участников. Читает
+/// precomputed `message_type_*` (см. `recompute_message_type_metrics`),
+/// а не сканирует `messages` заново на каждый клик по пилюле.
 /// `None` — у типа нет ни одного сообщения (пилюля и не должна быть
-/// кликабельной, но бэкенд не полагается на фронт в этом).
+/// кликабельной, но бэкенд не полагается на фронт в этом), либо чат ещё
+/// не прошёл актуальный импортер (`message_types_ready = 0`) — как и
+/// `get_message_type_overview`, а не частично доступные типы через
+/// колонки, которые для такого чата всё равно не заполнены.
 /// `view` — предпочтение фронта; если оно недоступно для этого чата
 /// (например «по месяцам» на трёхдневном чате), тихо откатываемся на
 /// разумный дефолт, а не ошибаемся.
@@ -285,24 +328,32 @@ pub fn get_message_type_detail(
     kind: MessageTypeKind,
     view: Option<TypeTimeView>,
 ) -> rusqlite::Result<Option<MessageTypeDetail>> {
-    let predicate = kind.predicate_sql();
-
-    let chat_row: Option<(i64, Option<i64>, Option<i64>)> = conn
+    let chat_row: Option<(i64, i64, Option<i64>, Option<i64>)> = conn
         .query_row(
-            "SELECT message_count, first_msg_ts, last_msg_ts FROM chats WHERE id = ?1",
+            "SELECT message_count, message_types_ready, first_msg_ts, last_msg_ts \
+             FROM chats WHERE id = ?1",
             params![chat_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    let Some((total_messages, first_ts, last_ts)) = chat_row else {
+    let Some((total_messages, ready, first_ts, last_ts)) = chat_row else {
         return Ok(None);
     };
+    if ready == 0 {
+        return Ok(None);
+    }
 
-    let total_count: i64 = conn.query_row(
-        &format!("SELECT COUNT(*) FROM messages WHERE chat_id = ?1 AND {predicate}"),
-        params![chat_id],
-        |row| row.get(0),
-    )?;
+    ensure_message_type_precomputed(conn, chat_id)?;
+
+    let key = kind.as_key();
+    let total_count: i64 = conn
+        .query_row(
+            "SELECT count FROM message_type_counts WHERE chat_id = ?1 AND kind = ?2",
+            params![chat_id, key],
+            |row| row.get(0),
+        )
+        .optional()?
+        .unwrap_or(0);
     if total_count == 0 {
         return Ok(None);
     }
@@ -342,17 +393,15 @@ pub fn get_message_type_detail(
     // сейчас выбрано для гистограммы — это разные вопросы: «какой темп в
     // среднем» и «что показать на графике прямо сейчас» (которое может
     // быть распределением по дню недели/часу суток, где «пик» в
-    // календарном смысле бессмысленен).
-    let rate_buckets: Vec<(String, i64)> = {
-        let sel = rate_granularity.bucket_select_expr();
-        let sql = format!(
-            "SELECT {sel} b, COUNT(*) FROM messages \
-             WHERE chat_id = ?1 AND ts IS NOT NULL AND {predicate} GROUP BY b ORDER BY b"
-        );
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![chat_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    // календарном смысле бессмысленен). Когда «по месяцам» доступно, эти
+    // бакеты совпадают с видом `Month` буквально (то же выражение
+    // группировки) — переиспользуем те же строки, а не храним дважды.
+    let rate_view_key = if month_available {
+        RATE_MONTH_VIEW_KEY
+    } else {
+        RATE_DAY_VIEW_KEY
     };
+    let rate_buckets: Vec<(String, i64)> = read_time_buckets(conn, chat_id, key, rate_view_key)?;
     let peak = if rate_buckets.len() >= MIN_BUCKETS_FOR_PEAK {
         rate_buckets
             .iter()
@@ -370,70 +419,18 @@ pub fn get_message_type_detail(
         total_count as f64 / rate_buckets.len() as f64
     };
 
-    let summary = if kind.is_duration_based() {
-        let durations: Vec<i64> = {
-            let sql = format!(
-                "SELECT duration_seconds FROM messages WHERE chat_id = ?1 AND {predicate} \
-                 AND duration_seconds IS NOT NULL ORDER BY duration_seconds"
-            );
-            let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(params![chat_id], |row| row.get(0))?;
-            rows.collect::<rusqlite::Result<Vec<_>>>()?
-        };
-        let total_seconds: i64 = durations.iter().sum();
-        let max_seconds = durations.iter().copied().max().unwrap_or(0);
-        MessageTypeSummaryStats::Duration {
-            total_seconds,
-            median_seconds: median(&durations),
-            max_seconds,
-        }
-    } else {
-        let top_sender: Option<String> = {
-            let sql = format!(
-                "SELECT p.display_name FROM messages m JOIN people p ON p.id = m.person_id \
-                 WHERE m.chat_id = ?1 AND p.merged_into IS NULL AND p.is_hidden = 0 AND {predicate} \
-                 GROUP BY p.id ORDER BY COUNT(*) DESC LIMIT 1"
-            );
-            conn.query_row(&sql, params![chat_id], |row| row.get(0))
-                .optional()?
-                .flatten()
-        };
-        MessageTypeSummaryStats::Frequency {
-            rate_granularity,
-            rate_value,
-            peak,
-            top_sender,
-        }
-    };
-
-    let buckets: Vec<TypeBucket> = {
-        let sel = selected_view.bucket_select_expr();
-        let sql = format!(
-            "SELECT {sel} b, COUNT(*) FROM messages \
-             WHERE chat_id = ?1 AND ts IS NOT NULL AND {predicate} GROUP BY b ORDER BY b"
-        );
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![chat_id], |row| {
-            Ok(TypeBucket {
-                bucket: row.get(0)?,
-                count: row.get(1)?,
-            })
-        })?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()?
-    };
-
     let participants: Vec<MessageTypeParticipantStat> = {
-        let sql = format!(
-            "SELECT p.id, p.display_name, \
-                    SUM(CASE WHEN {predicate} THEN 1 ELSE 0 END) cnt, \
-                    COUNT(*) total_own, \
-                    SUM(CASE WHEN {predicate} THEN COALESCE(duration_seconds, 0) ELSE 0 END) dur \
-             FROM messages m JOIN people p ON p.id = m.person_id \
-             WHERE m.chat_id = ?1 AND p.merged_into IS NULL AND p.is_hidden = 0 \
-             GROUP BY p.id ORDER BY cnt DESC"
-        );
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![chat_id], |row| {
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.display_name, mtps.count, pms.message_count, mtps.duration_seconds \
+             FROM message_type_participant_stats mtps \
+             JOIN people p ON p.id = mtps.person_id \
+             JOIN person_message_stats pms \
+               ON pms.chat_id = mtps.chat_id AND pms.person_id = mtps.person_id \
+             WHERE mtps.chat_id = ?1 AND mtps.kind = ?2 \
+               AND p.merged_into IS NULL AND p.is_hidden = 0 \
+             ORDER BY mtps.count DESC",
+        )?;
+        let rows = stmt.query_map(params![chat_id, key], |row| {
             let person_id: i64 = row.get(0)?;
             let display_name: Option<String> = row.get(1)?;
             let cnt: i64 = row.get(2)?;
@@ -470,6 +467,35 @@ pub fn get_message_type_detail(
             .collect()
     };
 
+    let summary = if kind.is_duration_based() {
+        let (total_seconds, median_seconds, max_seconds) = conn.query_row(
+            "SELECT total_seconds, median_seconds, max_seconds \
+             FROM message_type_durations WHERE chat_id = ?1 AND kind = ?2",
+            params![chat_id, key],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        MessageTypeSummaryStats::Duration {
+            total_seconds,
+            median_seconds,
+            max_seconds,
+        }
+    } else {
+        // Топ-отправитель — первый в уже отсортированном по count DESC
+        // списке участников, отдельный запрос не нужен.
+        let top_sender = participants.first().and_then(|p| p.display_name.clone());
+        MessageTypeSummaryStats::Frequency {
+            rate_granularity,
+            rate_value,
+            peak,
+            top_sender,
+        }
+    };
+
+    let buckets: Vec<TypeBucket> = read_time_buckets(conn, chat_id, key, selected_view.as_key())?
+        .into_iter()
+        .map(|(bucket, count)| TypeBucket { bucket, count })
+        .collect();
+
     Ok(Some(MessageTypeDetail {
         kind,
         total_count,
@@ -480,4 +506,190 @@ pub fn get_message_type_detail(
         buckets,
         participants,
     }))
+}
+
+fn read_time_buckets(
+    conn: &Connection,
+    chat_id: i64,
+    kind_key: &str,
+    view_key: &str,
+) -> rusqlite::Result<Vec<(String, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT bucket, count FROM message_type_time_buckets \
+         WHERE chat_id = ?1 AND kind = ?2 AND view = ?3 ORDER BY bucket",
+    )?;
+    let rows = stmt.query_map(params![chat_id, kind_key, view_key], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?;
+    rows.collect()
+}
+
+/// Ленивый self-heal: чат мог пройти актуальный импортер
+/// (`message_types_ready = 1`) до появления этого среза, когда
+/// `message_type_*`-таблицы ещё не существовали — досчитываем один раз
+/// при первом чтении, а не требуем повторный импорт (в отличие от самого
+/// `message_types_ready`, который отличает уже реальное «данных нет»,
+/// это здесь просто «ещё не закэшировано»). `message_type_counts` всегда
+/// получает по одной строке на каждый из 13 типов при пересчёте (даже с
+/// count=0) — поэтому отсутствие любых строк однозначно значит «не
+/// считано», а не «всё нулевое».
+fn ensure_message_type_precomputed(conn: &Connection, chat_id: i64) -> rusqlite::Result<()> {
+    let ready: Option<i64> = conn
+        .query_row(
+            "SELECT message_types_ready FROM chats WHERE id = ?1",
+            params![chat_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if ready != Some(1) {
+        return Ok(());
+    }
+    let has_rows: i64 = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM message_type_counts WHERE chat_id = ?1)",
+        params![chat_id],
+        |row| row.get(0),
+    )?;
+    if has_rows == 0 {
+        recompute_message_type_metrics(conn, chat_id)?;
+    }
+    Ok(())
+}
+
+/// Пересчитывает `message_type_counts`/`message_type_time_buckets`/
+/// `message_type_durations`/`message_type_participant_stats` с нуля для
+/// `chat_id` — вызывается в конце импорта (та же транзакция, что и
+/// `recompute_dashboard_metrics`) и лениво из `ensure_message_type_precomputed`.
+/// Требует, чтобы `person_message_stats` (`metrics::precompute`) уже была
+/// посчитана — `get_message_type_detail` резолвит через неё «сколько
+/// всего сообщений у этого участника», поэтому досчитываем и её тоже,
+/// если чат ещё не проходил через `ensure_dashboard_ready`.
+pub fn recompute_message_type_metrics(conn: &Connection, chat_id: i64) -> rusqlite::Result<()> {
+    ensure_dashboard_ready(conn, chat_id)?;
+
+    conn.execute(
+        "DELETE FROM message_type_counts WHERE chat_id = ?1",
+        params![chat_id],
+    )?;
+    conn.execute(
+        "DELETE FROM message_type_time_buckets WHERE chat_id = ?1",
+        params![chat_id],
+    )?;
+    conn.execute(
+        "DELETE FROM message_type_durations WHERE chat_id = ?1",
+        params![chat_id],
+    )?;
+
+    let bounds: Option<(Option<i64>, Option<i64>)> = conn
+        .query_row(
+            "SELECT first_msg_ts, last_msg_ts FROM chats WHERE id = ?1",
+            params![chat_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let span_days = match bounds {
+        Some((Some(a), Some(b))) => (b - a).max(0) / 86_400,
+        _ => 0,
+    };
+    let month_available = span_days >= MONTH_VIEW_MIN_SPAN_DAYS;
+
+    for kind in MessageTypeKind::ALL {
+        let predicate = kind.predicate_sql();
+        let key = kind.as_key();
+
+        let count: i64 = conn.query_row(
+            &format!("SELECT COUNT(*) FROM messages WHERE chat_id = ?1 AND {predicate}"),
+            params![chat_id],
+            |row| row.get(0),
+        )?;
+        conn.execute(
+            "INSERT INTO message_type_counts (chat_id, kind, count) VALUES (?1, ?2, ?3)",
+            params![chat_id, key, count],
+        )?;
+        if count == 0 {
+            continue;
+        }
+
+        let mut views: Vec<(&str, &str)> = vec![
+            (
+                TypeTimeView::DayOfWeek.as_key(),
+                TypeTimeView::DayOfWeek.bucket_select_expr(),
+            ),
+            (
+                TypeTimeView::HourOfDay.as_key(),
+                TypeTimeView::HourOfDay.bucket_select_expr(),
+            ),
+        ];
+        if month_available {
+            views.push((
+                RATE_MONTH_VIEW_KEY,
+                TypeTimeView::Month.bucket_select_expr(),
+            ));
+        } else {
+            views.push((RATE_DAY_VIEW_KEY, RateGranularity::Day.bucket_select_expr()));
+        }
+        for (view_key, expr) in views {
+            let sql = format!(
+                "INSERT INTO message_type_time_buckets (chat_id, kind, view, bucket, count) \
+                 SELECT ?1, ?2, ?3, {expr}, COUNT(*) FROM messages \
+                 WHERE chat_id = ?1 AND ts IS NOT NULL AND {predicate} GROUP BY {expr}"
+            );
+            conn.execute(&sql, params![chat_id, key, view_key])?;
+        }
+
+        if kind.is_duration_based() {
+            let durations: Vec<i64> = {
+                let sql = format!(
+                    "SELECT duration_seconds FROM messages WHERE chat_id = ?1 AND {predicate} \
+                     AND duration_seconds IS NOT NULL ORDER BY duration_seconds"
+                );
+                let mut stmt = conn.prepare(&sql)?;
+                let rows = stmt.query_map(params![chat_id], |row| row.get(0))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            let total_seconds: i64 = durations.iter().sum();
+            let max_seconds = durations.iter().copied().max().unwrap_or(0);
+            conn.execute(
+                "INSERT INTO message_type_durations \
+                 (chat_id, kind, total_seconds, median_seconds, max_seconds) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![chat_id, key, total_seconds, median(&durations), max_seconds],
+            )?;
+        }
+    }
+
+    recompute_message_type_participant_stats(conn, chat_id)?;
+
+    Ok(())
+}
+
+/// Только `message_type_participant_stats` — вызывается после
+/// `recompute_message_type_metrics` при пересчёте с нуля, а также сама по
+/// себе из `merge_people`: слияние физически переносит
+/// `messages.person_id` на `primary_id`, из-за чего эта (единственная
+/// person-keyed среди `message_type_*`) таблица перестаёт соответствовать
+/// `messages`, а счётчики/гистограммы по типам (person-agnostic) — нет.
+pub fn recompute_message_type_participant_stats(
+    conn: &Connection,
+    chat_id: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM message_type_participant_stats WHERE chat_id = ?1",
+        params![chat_id],
+    )?;
+    for kind in MessageTypeKind::ALL {
+        let predicate = kind.predicate_sql();
+        let key = kind.as_key();
+        let sql = format!(
+            "INSERT INTO message_type_participant_stats \
+             (chat_id, kind, person_id, count, duration_seconds) \
+             SELECT ?1, ?2, person_id, \
+                    SUM(CASE WHEN {predicate} THEN 1 ELSE 0 END), \
+                    SUM(CASE WHEN {predicate} THEN COALESCE(duration_seconds, 0) ELSE 0 END) \
+             FROM messages WHERE chat_id = ?1 AND person_id IS NOT NULL \
+             GROUP BY person_id \
+             HAVING SUM(CASE WHEN {predicate} THEN 1 ELSE 0 END) > 0"
+        );
+        conn.execute(&sql, params![chat_id, key])?;
+    }
+    Ok(())
 }

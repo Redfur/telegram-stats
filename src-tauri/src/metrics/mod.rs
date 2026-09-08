@@ -5,8 +5,9 @@ mod queries;
 
 pub use granularity::Granularity;
 pub use message_types::{
-    get_message_type_detail, get_message_type_overview, MessageTypeCount, MessageTypeDetail,
-    MessageTypeKind, MessageTypeOverview, MessageTypeParticipantExtra, MessageTypeParticipantStat,
+    get_message_type_detail, get_message_type_overview, recompute_message_type_metrics,
+    recompute_message_type_participant_stats, MessageTypeCount, MessageTypeDetail, MessageTypeKind,
+    MessageTypeOverview, MessageTypeParticipantExtra, MessageTypeParticipantStat,
     MessageTypeSummaryStats, RateGranularity, TypeBucket, TypeTimeView,
 };
 pub use precompute::{ensure_dashboard_ready, recompute_dashboard_metrics};
