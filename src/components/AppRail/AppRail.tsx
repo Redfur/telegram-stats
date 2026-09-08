@@ -20,7 +20,7 @@ export function AppRail({ chats }: AppRailProps) {
 
   return (
     <div className={styles.rail}>
-      <div className={styles.brand}>TG&nbsp;/&nbsp;ARCHIVE</div>
+      <div className={styles.brand}>TG&nbsp;/&nbsp;STATS</div>
       <div className={styles.chatsHeader}>
         <span className="kick">ЧАТЫ</span>
       </div>
