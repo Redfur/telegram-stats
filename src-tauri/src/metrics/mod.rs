@@ -3,6 +3,7 @@ mod message_types;
 pub mod precompute;
 mod queries;
 mod reactions;
+mod timeline;
 
 pub use granularity::Granularity;
 pub use message_types::{
@@ -21,4 +22,8 @@ pub use reactions::{
     recompute_reaction_metrics, recompute_reaction_person_stats, PersonReactionBreakdown,
     ReactionEmojiCount, ReactionEmojiRef, ReactionExchangeRow, ReactionsOverview, ReactionsSummary,
     TopReactedMessage,
+};
+pub use timeline::{
+    get_participant_timeline, CompositionPoint, GroupEventRow, PersonTimelineRow, Segment,
+    SegmentEndKind, SegmentStartKind, TimelineOverview, TimelineSummary,
 };

@@ -7,9 +7,10 @@ use telegram_stats_lib::db::{self, import_into_db, ImportContext, ImportPhase, I
 use telegram_stats_lib::import::{parse_export, ImportError, ParsedEvent};
 use telegram_stats_lib::metrics::{
     get_activity_series, get_chat_totals, get_message_type_detail, get_message_type_overview,
-    get_reaction_person_breakdown, get_reactions_overview, get_top_participants,
-    get_top_reacted_messages, granularity::pick_granularity, MessageTypeKind,
-    MessageTypeSummaryStats, ReactionsOverview, TypeTimeView,
+    get_participant_timeline, get_reaction_person_breakdown, get_reactions_overview,
+    get_top_participants, get_top_reacted_messages, granularity::pick_granularity, MessageTypeKind,
+    MessageTypeSummaryStats, ReactionsOverview, SegmentEndKind, SegmentStartKind, TimelineOverview,
+    TypeTimeView,
 };
 
 fn people_ordered_by_name(conn: &Connection, chat_id: i64) -> Vec<db::PersonRow> {
@@ -60,6 +61,8 @@ fn fresh_db() -> Connection {
         "../src/db/migrations/0010_reaction_favorite_emoji.sql"
     ))
     .expect("apply migration 0010");
+    conn.execute_batch(include_str!("../src/db/migrations/0011_timeline.sql"))
+        .expect("apply migration 0011");
     conn
 }
 
@@ -1535,4 +1538,232 @@ fn recompute_reaction_person_stats_leaves_favorite_given_null_for_untyped_reacti
         top_given_kind.is_none(),
         "a NULL-kind reaction_actors row must not produce a fake favorite emoji"
     );
+}
+
+// --- Таймлайн участников (docs/PLAN.md Фаза 3, секция 05 дашборда) ---
+//
+// group_50_members.json: `create_group` (актор Аня) → Аня "joined";
+// `invite_members` девяти имён (Боря..Катя) → девять "joined", related =
+// Аня; `remove_members` ["Жора"] (актор Аня, Жора не отправлял событие
+// сам за себя) → "removed", related = Аня. Остальные ~40 участников
+// фикстуры (включая Жору до его удаления) присутствуют только через
+// сообщения, без явного входа — `since_start`. `edit_group_photo` и
+// `migrate_to_supergroup` — групповые события без членского смысла.
+
+#[test]
+fn group_50_members_populates_membership_and_chat_events() {
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "group_50_members.json");
+    let people = people_ordered_by_name(&conn, chat.id);
+    let anya = people
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Аня"))
+        .unwrap();
+    let zhora = people
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Жора"))
+        .unwrap();
+
+    let joined_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM membership_events WHERE chat_id = ?1 AND kind = 'joined'",
+            params![chat.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        joined_count, 10,
+        "founder from create_group + 9 names from invite_members"
+    );
+
+    let (zhora_kind, zhora_related): (String, Option<i64>) = conn
+        .query_row(
+            "SELECT kind, related_person_id FROM membership_events \
+             WHERE chat_id = ?1 AND person_id = ?2",
+            params![chat.id, zhora.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        zhora_kind, "removed",
+        "Жора was named in remove_members by a different actor (Аня), not himself"
+    );
+    assert_eq!(zhora_related, Some(anya.id));
+
+    let unresolved: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM membership_events WHERE chat_id = ?1 AND person_id IS NULL",
+            params![chat.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(unresolved, 0, "every name in this fixture is unambiguous");
+
+    let chat_event_kinds: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT kind FROM chat_events WHERE chat_id = ?1 ORDER BY ts")
+            .unwrap();
+        stmt.query_map(params![chat.id], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    assert_eq!(
+        chat_event_kinds,
+        vec!["created", "photo_changed", "migrated"],
+        "pin_message is not a timeline-relevant action, must not appear here"
+    );
+}
+
+#[test]
+fn participant_timeline_reports_founder_invitees_and_a_removal() {
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "group_50_members.json");
+    let people = people_ordered_by_name(&conn, chat.id);
+    let anya = people
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Аня"))
+        .unwrap();
+    let zhora = people
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Жора"))
+        .unwrap();
+
+    let overview = get_participant_timeline(&conn, chat.id).unwrap();
+    let TimelineOverview::Available(summary) = overview else {
+        panic!("a freshly imported chat with service events must report Available");
+    };
+
+    assert_eq!(
+        summary.total, 50,
+        "everyone who ever authored a message or has a resolved join event"
+    );
+    assert_eq!(summary.left, 1, "only Жора has a closing event");
+    assert_eq!(summary.current, 49);
+    assert_eq!(summary.group_event_count, 3);
+    assert_eq!(summary.unresolved_event_count, 0);
+    assert!(
+        summary.peak_headcount >= 10,
+        "must at least reflect the founder + 9 invitees, composition also counts since_start joins"
+    );
+
+    let anya_row = summary
+        .people
+        .iter()
+        .find(|p| p.person_id == anya.id)
+        .expect("Аня must have a timeline row");
+    assert_eq!(anya_row.segments.len(), 1);
+    assert!(matches!(
+        anya_row.segments[0].start_kind,
+        SegmentStartKind::Joined
+    ));
+    assert!(
+        anya_row.segments[0].end_ts.is_none(),
+        "Аня was never removed or reported as leaving"
+    );
+
+    let zhora_row = summary
+        .people
+        .iter()
+        .find(|p| p.person_id == zhora.id)
+        .expect("Жора must have a timeline row");
+    assert_eq!(zhora_row.segments.len(), 1);
+    assert!(
+        matches!(
+            zhora_row.segments[0].start_kind,
+            SegmentStartKind::SinceStart
+        ),
+        "Жора has no recorded join event in this fixture"
+    );
+    assert!(matches!(
+        zhora_row.segments[0].end_kind,
+        Some(SegmentEndKind::Removed)
+    ));
+}
+
+#[test]
+fn personal_chat_has_no_participant_timeline() {
+    // personal_chat.json несёt только звонки (`phone_call`/`group_call`)
+    // как сервисные события — они не членские и не групповые, поэтому
+    // после актуального импортера membership_events/chat_events остаются
+    // пустыми для этого чата (docs/SPEC.md §8.7 — в личных чатах нет
+    // событий вступления/выхода).
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "personal_chat.json");
+    let overview = get_participant_timeline(&conn, chat.id).unwrap();
+    assert!(matches!(overview, TimelineOverview::NotApplicable));
+}
+
+#[test]
+fn participant_timeline_reports_needs_reimport_for_a_chat_imported_before_the_timeline_migration() {
+    // Тот же приём, что и у reactions_overview_reports_needs_reimport_...:
+    // база собрана вручную только по миграциям до появления таймлайна, в
+    // неё вставлен "старый" чат, и только после этого накатывается
+    // 0011_timeline.sql — imitates a chat that was imported before this
+    // feature shipped, whose service events were never persisted at all.
+    let conn = Connection::open_in_memory().expect("open in-memory db");
+    conn.execute_batch(include_str!("../src/db/migrations/0001_init.sql"))
+        .expect("apply migration 0001");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0002_chat_source_size.sql"
+    ))
+    .expect("apply migration 0002");
+    conn.execute_batch(include_str!("../src/db/migrations/0003_people_aliases.sql"))
+        .expect("apply migration 0003");
+    conn.execute_batch(include_str!("../src/db/migrations/0004_message_types.sql"))
+        .expect("apply migration 0004");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0005_dashboard_precompute.sql"
+    ))
+    .expect("apply migration 0005");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0006_message_type_precompute.sql"
+    ))
+    .expect("apply migration 0006");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0007_person_activity_span.sql"
+    ))
+    .expect("apply migration 0007");
+    conn.execute_batch(include_str!("../src/db/migrations/0008_reactions.sql"))
+        .expect("apply migration 0008");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0009_reaction_actor_emoji.sql"
+    ))
+    .expect("apply migration 0009");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0010_reaction_favorite_emoji.sql"
+    ))
+    .expect("apply migration 0010");
+
+    conn.execute(
+        "INSERT INTO chats (tg_chat_id, name, chat_type, imported_at, message_count, participant_count) \
+         VALUES (1, 'Old chat', 'private_group', 0, 5, 2)",
+        [],
+    )
+    .expect("insert pre-existing chat row");
+    let chat_id = conn.last_insert_rowid();
+
+    conn.execute_batch(include_str!("../src/db/migrations/0011_timeline.sql"))
+        .expect("apply migration 0011 on top of the pre-existing chat");
+
+    let overview = get_participant_timeline(&conn, chat_id).unwrap();
+    assert!(
+        matches!(overview, TimelineOverview::NeedsReimport),
+        "a chat that never went through the updated importer must ask for a re-import, not show empty/zero data"
+    );
+}
+
+#[test]
+fn participant_timeline_never_panics_across_the_full_fixture_set() {
+    for fixture_name in [
+        "three_day_chat.json",
+        "group_50_members.json",
+        "no_reactions_old_export.json",
+        "personal_chat.json",
+        "english_chat.json",
+    ] {
+        let mut conn = fresh_db();
+        let chat = import(&mut conn, fixture_name);
+        get_participant_timeline(&conn, chat.id).unwrap();
+    }
 }

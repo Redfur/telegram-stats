@@ -40,6 +40,23 @@ fn truncate_preview(text: &str) -> String {
 /// person_id → отображаемое имя → (первое, последнее) время встречи.
 type AliasSeen = HashMap<i64, HashMap<String, (Option<i64>, Option<i64>)>>;
 
+/// Сервисные события, которым таймлайн даёт значение (docs/PLAN.md Фаза 3,
+/// секция 05 дашборда) — буферизуются во время стриминга и разрешаются в
+/// строки `membership_events`/`chat_events` только после того, как
+/// достроен полный `alias_seen`/`people` (см. `name_to_people` ниже):
+/// `members[]` в `remove_members`/`invite_members` несёт только
+/// отображаемые имена без id (docs/SPEC.md §8.2), а человек, которого
+/// приглашают, чаще всего ещё не написал ни одного сообщения к моменту
+/// самого события `invite_members`.
+struct PendingServiceEvent {
+    ts: Option<i64>,
+    actor_person_id: Option<i64>,
+    actor_display_name: Option<String>,
+    action: String,
+    members: Vec<String>,
+    title: Option<String>,
+}
+
 /// Read-обёртка, считающая прочитанные байты в общий счётчик — честный
 /// процент прогресса по объёму файла, без второго прохода только ради
 /// подсчёта сообщений (второй проход противоречил бы цели «импорт 1M <
@@ -129,8 +146,12 @@ fn resolve_person(
 /// Потоково пишет `result.json` в SQLite: одна транзакция на весь импорт,
 /// `person_id` резолвится через HashMap в памяти (по участникам, не по
 /// сообщениям), `Vec<Message>` нигде не собирается (docs/SPEC.md §6).
-/// Сервисные события и `Unrecognized` не персистятся в MVP — ни одна
-/// текущая метрика их не читает (см. docs/PLAN.md).
+/// `Unrecognized` не персистится — будущая версия формата, ни одна
+/// метрика её не читает. Сервисные события с action, значимым для
+/// таймлайна участников (вход/выход/удаление/групповые события —
+/// `PendingServiceEvent` выше), персистятся в `membership_events`/
+/// `chat_events`; остальные action (`pin_message`, звонки, ...) по-прежнему
+/// не персистятся — ни одна текущая метрика их не читает (см. docs/PLAN.md).
 ///
 /// Повторный импорт того же чата (совпадает `tg_chat_id`) заменяет
 /// существующую запись, а не дублирует её (docs/SPEC.md §3), и делает это
@@ -173,6 +194,7 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
     // вовсе" (docs/SPEC.md §7/§8.5). Второй случай не лечится повторным
     // импортом этого же файла.
     let mut saw_reactions_field = false;
+    let mut pending_services: Vec<PendingServiceEvent> = Vec::new();
 
     let meta = {
         let mut insert_msg = tx
@@ -209,8 +231,67 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                 return Err(ImportError::Cancelled);
             }
 
-            let ParsedEvent::Message(m) = event else {
-                return Ok(()); // service/unrecognized — не персистятся в MVP
+            let m = match event {
+                ParsedEvent::Message(m) => m,
+                ParsedEvent::Service(s) => {
+                    // Только action, которые таймлайн умеет разобрать
+                    // (см. обработку pending_services ниже) — резолвим
+                    // actor через resolve_person только для них, чтобы не
+                    // заводить строку people ради, например, pin_message
+                    // от человека, который иначе ни разу не участвовал.
+                    let relevant = matches!(
+                        s.action.as_str(),
+                        "create_group"
+                            | "invite_members"
+                            | "remove_members"
+                            | "edit_group_title"
+                            | "edit_group_photo"
+                            | "migrate_to_supergroup"
+                            | "migrate_from_group"
+                            | "join_group_by_link"
+                    );
+                    if !relevant {
+                        return Ok(());
+                    }
+                    let actor_person_id = match s.actor.as_ref() {
+                        Some(p) if !p.id.is_empty() => Some(
+                            resolve_person(
+                                &tx,
+                                &mut people_cache,
+                                chat_id,
+                                &p.id,
+                                p.display_name.as_deref(),
+                            )
+                            .map_err(db_err)?,
+                        ),
+                        _ => None,
+                    };
+                    let members: Vec<String> = s
+                        .extra
+                        .get("members")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let title = s
+                        .extra
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    pending_services.push(PendingServiceEvent {
+                        ts: s.date_unixtime,
+                        actor_person_id,
+                        actor_display_name: s.actor.as_ref().and_then(|p| p.display_name.clone()),
+                        action: s.action,
+                        members,
+                        title,
+                    });
+                    return Ok(());
+                }
+                ParsedEvent::Unrecognized { .. } => return Ok(()), // будущая версия формата — не персистится в MVP
             };
 
             let mut alias_pid_name: Option<(i64, String)> = None;
@@ -379,6 +460,186 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
         }
     }
 
+    // Имя → person_id для разрешения `members[]` в буферизованных
+    // сервисных событиях (docs/SPEC.md §8.2 — там только отображаемые
+    // имена, без id). Источник — итоговое `people.display_name` (первое
+    // когда-либо увиденное имя, resolve_person не переписывает его) и все
+    // исторические имена из alias_seen (человек мог сменить ник между
+    // приглашением и сообщениями). Неоднозначное имя (два разных
+    // person_id с одинаковым отображаемым именем) сознательно не
+    // резолвится — см. `PendingServiceEvent` выше.
+    let mut name_to_people: HashMap<String, Vec<i64>> = HashMap::new();
+    {
+        let mut stmt = tx
+            .prepare("SELECT id, display_name FROM people WHERE chat_id = ?1")
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map(params![chat_id], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?))
+            })
+            .map_err(db_err)?;
+        for row in rows {
+            let (pid, name) = row.map_err(db_err)?;
+            if let Some(name) = name {
+                let ids = name_to_people.entry(name).or_default();
+                if !ids.contains(&pid) {
+                    ids.push(pid);
+                }
+            }
+        }
+    }
+    for (pid, names) in &alias_seen {
+        for name in names.keys() {
+            let ids = name_to_people.entry(name.clone()).or_default();
+            if !ids.contains(pid) {
+                ids.push(*pid);
+            }
+        }
+    }
+    let resolve_name = |name: &str, map: &HashMap<String, Vec<i64>>| -> Option<i64> {
+        match map.get(name) {
+            Some(ids) if ids.len() == 1 => Some(ids[0]),
+            _ => None,
+        }
+    };
+
+    {
+        let mut insert_membership = tx
+            .prepare(
+                "INSERT INTO membership_events \
+                 (chat_id, person_id, unresolved_name, kind, ts, related_person_id) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )
+            .map_err(db_err)?;
+        let mut insert_chat_event = tx
+            .prepare(
+                "INSERT INTO chat_events (chat_id, kind, ts, actor_id, detail) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
+            .map_err(db_err)?;
+
+        for ev in &pending_services {
+            let Some(ts) = ev.ts else {
+                continue; // без даты класть на таймлайн нечего
+            };
+
+            match ev.action.as_str() {
+                "create_group" => {
+                    insert_chat_event
+                        .execute(params![
+                            chat_id,
+                            "created",
+                            ts,
+                            ev.actor_person_id,
+                            ev.title.as_deref()
+                        ])
+                        .map_err(db_err)?;
+                    if let Some(actor_id) = ev.actor_person_id {
+                        // Основатель считается вошедшим в момент создания.
+                        insert_membership
+                            .execute(params![
+                                chat_id,
+                                actor_id,
+                                None::<&str>,
+                                "joined",
+                                ts,
+                                None::<i64>
+                            ])
+                            .map_err(db_err)?;
+                    }
+                }
+                "join_group_by_link" => {
+                    if let Some(actor_id) = ev.actor_person_id {
+                        insert_membership
+                            .execute(params![
+                                chat_id,
+                                actor_id,
+                                None::<&str>,
+                                "joined",
+                                ts,
+                                None::<i64>
+                            ])
+                            .map_err(db_err)?;
+                    }
+                }
+                "invite_members" => {
+                    for name in &ev.members {
+                        let resolved = resolve_name(name, &name_to_people);
+                        let unresolved_name = resolved.is_none().then_some(name.as_str());
+                        insert_membership
+                            .execute(params![
+                                chat_id,
+                                resolved,
+                                unresolved_name,
+                                "joined",
+                                ts,
+                                ev.actor_person_id
+                            ])
+                            .map_err(db_err)?;
+                    }
+                }
+                "remove_members" => {
+                    for name in &ev.members {
+                        let resolved = resolve_name(name, &name_to_people);
+                        let unresolved_name = resolved.is_none().then_some(name.as_str());
+                        // Telegram кодирует самостоятельный выход тем же
+                        // action, что и удаление — отличаем по совпадению
+                        // имени актора и удаляемого (docs/PLAN.md план
+                        // «Таймлайн участников»), не по разрешённому
+                        // person_id: работает и когда имя неоднозначно.
+                        let is_self = ev.actor_display_name.as_deref() == Some(name.as_str());
+                        let kind = if is_self { "left" } else { "removed" };
+                        let related = if is_self { None } else { ev.actor_person_id };
+                        insert_membership
+                            .execute(params![
+                                chat_id,
+                                resolved,
+                                unresolved_name,
+                                kind,
+                                ts,
+                                related
+                            ])
+                            .map_err(db_err)?;
+                    }
+                }
+                "edit_group_title" => {
+                    insert_chat_event
+                        .execute(params![
+                            chat_id,
+                            "title_changed",
+                            ts,
+                            ev.actor_person_id,
+                            ev.title.as_deref()
+                        ])
+                        .map_err(db_err)?;
+                }
+                "edit_group_photo" => {
+                    insert_chat_event
+                        .execute(params![
+                            chat_id,
+                            "photo_changed",
+                            ts,
+                            ev.actor_person_id,
+                            None::<&str>
+                        ])
+                        .map_err(db_err)?;
+                }
+                "migrate_to_supergroup" | "migrate_from_group" => {
+                    insert_chat_event
+                        .execute(params![
+                            chat_id,
+                            "migrated",
+                            ts,
+                            ev.actor_person_id,
+                            None::<&str>
+                        ])
+                        .map_err(db_err)?;
+                }
+                _ => {}
+            }
+        }
+    }
+
     if let Some(tg_chat_id) = meta.tg_chat_id {
         let existing: Option<i64> = tx
             .query_row(
@@ -497,6 +758,23 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                 params![old_id, chat_id],
             )
             .map_err(db_err)?;
+            // membership_events/chat_events — та же денормализация
+            // chat_id, что и у реакционных таблиц выше (те же причины);
+            // person_id/actor_id/related_person_id, унаследованные от
+            // временных `people`-строк, которые слились в существующего
+            // человека выше и были удалены, — тот же неисправленный
+            // пробел, что и у `reaction_actors.person_id` (ON DELETE SET
+            // NULL вместо переезда на target_id), не новый для этого среза.
+            tx.execute(
+                "UPDATE membership_events SET chat_id = ?1 WHERE chat_id = ?2",
+                params![old_id, chat_id],
+            )
+            .map_err(db_err)?;
+            tx.execute(
+                "UPDATE chat_events SET chat_id = ?1 WHERE chat_id = ?2",
+                params![old_id, chat_id],
+            )
+            .map_err(db_err)?;
             tx.execute("DELETE FROM chats WHERE id = ?1", params![chat_id])
                 .map_err(db_err)?;
             chat_id = old_id;
@@ -507,7 +785,7 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
     tx.execute(
         "UPDATE chats SET tg_chat_id=?1, name=?2, chat_type=?3, first_msg_ts=?4, last_msg_ts=?5, \
          message_count=?6, participant_count=?7, source_file_size=?8, message_types_ready=1, \
-         reactions_ready=1, reactions_supported=?9 \
+         reactions_ready=1, reactions_supported=?9, timeline_ready=1 \
          WHERE id=?10",
         params![
             meta.tg_chat_id,
