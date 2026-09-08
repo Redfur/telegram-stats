@@ -1,8 +1,10 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
-import { Button, DataTable, Input } from "../ui";
+import { Button, DataTable, Input, Skeleton } from "../ui";
 import type { PersonRow } from "../../lib/types";
 import styles from "./ParticipantsManager.module.css";
+
+const SKELETON_ROW_COUNT = 8;
 
 const MONTH_YEAR = new Intl.DateTimeFormat("ru-RU", { month: "2-digit", year: "numeric" });
 
@@ -28,13 +30,25 @@ interface ParticipantsManagerProps {
   // Правая часть общей строки футера (макет 3d) — например, «Пропустить
   // разбор» у шага мастера импорта. Самостоятельный экран её не передаёт.
   footerRight?: ReactNode;
+  // Только у самостоятельного экрана «Участники» (Participants.tsx) —
+  // шаг мастера импорта получает people уже посчитанными к моменту, когда
+  // он открывается (precompute — часть той же транзакции импорта), там
+  // скелетон не нужен.
+  loading?: boolean;
 }
 
 // Таблица + панель действий разбора участников — общее ядро макета
 // «Экраны приложения» 3d/3e, используется и шагом мастера импорта
 // (ParticipantReviewStep, модальный chrome), и самостоятельным экраном
 // «Участники» (Participants, chrome обычной страницы).
-export function ParticipantsManager({ people, onMerge, onHide, onRename, footerRight }: ParticipantsManagerProps) {
+export function ParticipantsManager({
+  people,
+  onMerge,
+  onHide,
+  onRename,
+  footerRight,
+  loading,
+}: ParticipantsManagerProps) {
   const [query, setQuery] = useState("");
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [renaming, setRenaming] = useState(false);
@@ -173,15 +187,26 @@ export function ParticipantsManager({ people, onMerge, onHide, onRename, footerR
         </div>
       )}
 
-      <div className={styles.tableWrap}>
-        <DataTable
-          data={filtered}
-          columns={columns}
-          enableRowSelection
-          rowSelection={rowSelection}
-          onRowSelectionChange={setRowSelection}
-          getRowId={(p) => String(p.id)}
-        />
+      <div className={styles.tableWrap} aria-busy={loading || undefined}>
+        {loading ? (
+          Array.from({ length: SKELETON_ROW_COUNT }, (_, i) => (
+            <div key={i} className={styles.skeletonRow}>
+              <Skeleton height="1em" />
+              <Skeleton height="1em" />
+              <Skeleton height="1em" />
+              <Skeleton height="1em" />
+            </div>
+          ))
+        ) : (
+          <DataTable
+            data={filtered}
+            columns={columns}
+            enableRowSelection
+            rowSelection={rowSelection}
+            onRowSelectionChange={setRowSelection}
+            getRowId={(p) => String(p.id)}
+          />
+        )}
       </div>
 
       <div className={styles.footer}>

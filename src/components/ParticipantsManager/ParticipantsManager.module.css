@@ -47,6 +47,22 @@
   padding: 0 var(--sp-8);
 }
 
+.skeletonRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  padding: var(--sp-4) var(--sp-3);
+  border-bottom: var(--border-w) solid var(--border-soft);
+}
+
+.skeletonRow > * {
+  flex: 1 1 0;
+}
+
+.skeletonRow > *:first-child {
+  flex: 0 0 28%;
+}
+
 .aliases {
   color: var(--text-muted);
   font-size: 12.5px;

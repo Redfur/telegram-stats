@@ -88,6 +88,10 @@ pub fn open_and_migrate(path: &Path) -> rusqlite::Result<Connection> {
         conn.execute_batch(include_str!("migrations/0006_message_type_precompute.sql"))?;
         conn.pragma_update(None, "user_version", 6)?;
     }
+    if version < 7 {
+        conn.execute_batch(include_str!("migrations/0007_person_activity_span.sql"))?;
+        conn.pragma_update(None, "user_version", 7)?;
+    }
 
     Ok(conn)
 }

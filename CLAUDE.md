@@ -92,7 +92,7 @@ Oswald/Manrope (и там, и в коде) — у Барлоу нет кирил
 рабочий путь импорт → SQLite → дашборд, но в урезанном объёме каждой
 затронутой фазы — сперва весь путь целиком, остальные метрики и экраны
 добираются инкрементально. `src-tauri/src/db/` — схема (`chats`/`people`/
-`messages`/`aliases`, миграции `0001`–`0004` через ручной
+`messages`/`aliases`, миграции `0001`–`0007` через ручной
 `PRAGMA user_version`, без `reactions`/`links`/`tokens` и без строк для
 сервисных событий — ни одна метрика их пока не читает; `0002` добавляет
 `chats.source_file_size` для честного агрегата в шапке Библиотеки,
@@ -102,7 +102,12 @@ Oswald/Manrope (и там, и в коде) — у Барлоу нет кирил
 `duration_seconds` и `chats.message_types_ready` для блока «Типы
 сообщений», `0005` — `chats.word_count`/`char_count`/`dashboard_ready` и
 таблицы `activity_buckets`/`person_message_stats` для precompute сводки/
-активности/топа участников), Tauri-команды (`import_chat`, `cancel_import`, `list_chats`,
+активности/топа участников, `0006` — `message_type_counts`/
+`message_type_time_buckets`/`message_type_durations`/
+`message_type_participant_stats` для precompute типов сообщений, `0007`
+— `person_message_stats.first_ts`/`last_ts` (период активности каждого
+участника — экран «Участники» тоже читает precomputed-таблицу, а не
+сканирует `messages`, см. ниже), Tauri-команды (`import_chat`, `cancel_import`, `list_chats`,
 `delete_chat`, `get_people`, `merge_people`, `hide_person`,
 `rename_person`, `get_chat_totals`, `get_activity_series`,
 `get_top_participants`, `get_message_type_overview`,
@@ -194,14 +199,24 @@ Precompute не убрал фриз целиком: `Db` был единстве
 DELETE/INSERT и ловят `UNIQUE constraint failed` (тест
 `tests/db_pool.rs` воспроизводит это до фикса, 6 потоков конкурентно
 досчитывают один чат). `busy_timeout` в `build_pool` — конкурирующая
-транзакция ждёт вместо мгновенной ошибки "database is locked". 47
-Rust-тестов зелёные, `cargo clippy` чист.
+транзакция ждёт вместо мгновенной ошибки "database is locked". `get_people`
+(экран «Участники») тем же приёмом переведён с `LEFT JOIN messages` +
+`GROUP BY` на чтение `person_message_stats` — она тоже подвисала на
+больших чатах, отдельно от дашборда/типов сообщений, потому что раньше
+не была частью precompute-среза. Миграция `0007` добавила туда
+`first_ts`/`last_ts` (период активности участника — эти два поля экран
+и показывает в колонке «Активность», `message_count` уже был в таблице).
+48 Rust-тестов зелёные, `cargo clippy` чист.
 
 Фронт: `Skeleton` (`src/components/ui/Skeleton/`) — пульсирующий
 плейсхолдер, заменил «ничего не рендерим, пока данные не пришли» в
-`Dashboard.tsx`/`MessageTypesBlock.tsx`. Оба компонента дебаунсят смену
-`chatId` на 150 мс перед invoke — быстрый скролл по списку чатов в
-рельсе больше не ставит в очередь запросы на каждый промежуточный чат.
+`Dashboard.tsx`/`MessageTypesBlock.tsx`/`ParticipantsManager.tsx`
+(скелетон-строки в `Participants.tsx`, шаг мастера импорта
+`ParticipantReviewStep` его не запрашивает — там `people` уже посчитаны
+к открытию шага). Дебаунс смены `chatId` на 150 мс перед invoke —
+`Dashboard.tsx`/`MessageTypesBlock.tsx`/`usePeopleReview` — быстрый
+скролл по списку чатов в рельсе больше не ставит в очередь запросы на
+каждый промежуточный чат.
 ETA в прогрессе импорта, параллельные импорты, явный выбор при конфликте
 `tg_chat_id` без `id` в старом экспорте, авто-детект дублей/ботов в шаге
 разбора участников и остальные метрики из SPEC §9 — сознательно не в

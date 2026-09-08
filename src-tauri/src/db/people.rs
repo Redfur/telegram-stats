@@ -1,6 +1,8 @@
 use rusqlite::{params, Connection};
 
-use crate::metrics::{recompute_dashboard_metrics, recompute_message_type_participant_stats};
+use crate::metrics::{
+    ensure_dashboard_ready, recompute_dashboard_metrics, recompute_message_type_participant_stats,
+};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PersonRow {
@@ -17,13 +19,24 @@ pub struct PersonRow {
 /// объединён в кого-то другого (`merged_into IS NOT NULL`), они больше
 /// не самостоятельная строка. Скрытые (`is_hidden`) остаются в списке —
 /// это шаг, где их и скрывают/возвращают.
+///
+/// Читает `person_message_stats` (`metrics::precompute`), а не сканирует
+/// `messages` через `JOIN` на каждое открытие экрана «Участники» — там
+/// раньше и подвисало на больших чатах, тем же паттерном, что и
+/// дашборд/типы сообщений (`LEFT JOIN`, не `JOIN`: участник без единого
+/// сообщения — не должен пропасть из списка). `ensure_dashboard_ready` —
+/// тот же self-heal для чата, импортированного до появления этого среза.
 pub fn get_people(conn: &Connection, chat_id: i64) -> rusqlite::Result<Vec<PersonRow>> {
+    ensure_dashboard_ready(conn, chat_id)?;
+
     let mut stmt = conn.prepare(
         "SELECT p.id, p.display_name, p.is_hidden, \
-                COUNT(m.id), MIN(m.ts), MAX(m.ts) \
-         FROM people p LEFT JOIN messages m ON m.person_id = p.id \
+                COALESCE(pms.message_count, 0), pms.first_ts, pms.last_ts \
+         FROM people p \
+         LEFT JOIN person_message_stats pms \
+           ON pms.chat_id = p.chat_id AND pms.person_id = p.id \
          WHERE p.chat_id = ?1 AND p.merged_into IS NULL \
-         GROUP BY p.id ORDER BY COUNT(m.id) DESC",
+         ORDER BY COALESCE(pms.message_count, 0) DESC",
     )?;
     let mut rows = stmt
         .query_map(params![chat_id], |row| {

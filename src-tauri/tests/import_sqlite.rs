@@ -45,6 +45,10 @@ fn fresh_db() -> Connection {
         "../src/db/migrations/0006_message_type_precompute.sql"
     ))
     .expect("apply migration 0006");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0007_person_activity_span.sql"
+    ))
+    .expect("apply migration 0007");
     conn
 }
 
@@ -727,6 +731,34 @@ fn precomputed_totals_and_activity_match_a_live_scan_of_messages() {
             participant_total, expected_participant_total,
             "{fixture_name}: top participants must account for every attributed message"
         );
+
+        // get_people (экран «Участники») — своя precomputed-таблица
+        // (person_message_stats.first_ts/last_ts), сверяем per-person
+        // MIN/MAX независимым запросом.
+        for person in db::get_people(&conn, chat.id).unwrap() {
+            let (expected_count, expected_first, expected_last): (i64, Option<i64>, Option<i64>) =
+                conn.query_row(
+                    "SELECT COUNT(*), MIN(ts), MAX(ts) FROM messages WHERE person_id = ?1",
+                    [person.id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .unwrap();
+            assert_eq!(
+                person.message_count, expected_count,
+                "{fixture_name}/{:?}: get_people message_count mismatch",
+                person.display_name
+            );
+            assert_eq!(
+                person.first_msg_ts, expected_first,
+                "{fixture_name}/{:?}: get_people first_msg_ts mismatch",
+                person.display_name
+            );
+            assert_eq!(
+                person.last_msg_ts, expected_last,
+                "{fixture_name}/{:?}: get_people last_msg_ts mismatch",
+                person.display_name
+            );
+        }
     }
 }
 
@@ -776,6 +808,14 @@ fn dashboard_metrics_self_heal_for_a_chat_imported_before_the_precompute_migrati
         "../src/db/migrations/0005_dashboard_precompute.sql"
     ))
     .expect("apply migration 0005 on top of the pre-existing chat");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0006_message_type_precompute.sql"
+    ))
+    .expect("apply migration 0006 on top of the pre-existing chat");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0007_person_activity_span.sql"
+    ))
+    .expect("apply migration 0007 on top of the pre-existing chat");
 
     let ready_before: i64 = conn
         .query_row(
@@ -805,6 +845,14 @@ fn dashboard_metrics_self_heal_for_a_chat_imported_before_the_precompute_migrati
     let top = get_top_participants(&conn, chat_id).unwrap();
     assert_eq!(top.participants.len(), 1);
     assert_eq!(top.participants[0].message_count, 2);
+
+    // get_people (экран «Участники») читает ту же person_message_stats —
+    // тот self-heal, что и остальные, должен покрыть и её.
+    let people = db::get_people(&conn, chat_id).unwrap();
+    assert_eq!(people.len(), 1);
+    assert_eq!(people[0].message_count, 2);
+    assert_eq!(people[0].first_msg_ts, Some(1000));
+    assert_eq!(people[0].last_msg_ts, Some(2000));
 
     let ready_after: i64 = conn
         .query_row(
@@ -844,6 +892,35 @@ fn merging_people_keeps_person_message_stats_consistent_not_just_the_live_view()
         stale_row_count, 0,
         "the merged-away person_id must not linger in the precomputed table"
     );
+}
+
+#[test]
+fn merging_people_combines_activity_span_not_just_message_count() {
+    // get_people отдаёт first_msg_ts/last_msg_ts из person_message_stats
+    // (recompute_dashboard_metrics) — после слияния диапазон должен
+    // расшириться до объединения обоих участников, а не остаться
+    // диапазоном одного только primary.
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "three_day_chat.json");
+    let people = people_ordered_by_name(&conn, chat.id);
+    let (primary, duplicate) = (&people[0], &people[1]);
+    let expected_first = primary
+        .first_msg_ts
+        .unwrap()
+        .min(duplicate.first_msg_ts.unwrap());
+    let expected_last = primary
+        .last_msg_ts
+        .unwrap()
+        .max(duplicate.last_msg_ts.unwrap());
+
+    db::merge_people(&conn, chat.id, primary.id, &[duplicate.id]).unwrap();
+
+    let merged = people_ordered_by_name(&conn, chat.id)
+        .into_iter()
+        .find(|p| p.id == primary.id)
+        .unwrap();
+    assert_eq!(merged.first_msg_ts, Some(expected_first));
+    assert_eq!(merged.last_msg_ts, Some(expected_last));
 }
 
 #[test]

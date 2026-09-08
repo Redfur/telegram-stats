@@ -12,17 +12,25 @@ interface ParticipantsProps {
 // обычная страница (шапка в стиле Library, без модального chrome и без
 // «Готово»/«Пропустить», это не шаг мастера).
 export function Participants({ chatId, chatName }: ParticipantsProps) {
-  const { people, merge, hide, rename } = usePeopleReview(chatId);
+  const { people, isLoading, merge, hide, rename } = usePeopleReview(chatId);
 
   return (
     <div className={styles.wrap}>
       <div className={styles.headRow}>
         <div>
           <h1 className={styles.title}>Участники{chatName ? ` · ${chatName}` : ""}</h1>
-          <div className={styles.summary}>{people.length.toLocaleString("ru-RU")} найдено</div>
+          <div className={styles.summary}>
+            {isLoading ? "Считаем…" : `${people.length.toLocaleString("ru-RU")} найдено`}
+          </div>
         </div>
       </div>
-      <ParticipantsManager people={people} onMerge={merge} onHide={hide} onRename={rename} />
+      <ParticipantsManager
+        people={people}
+        onMerge={merge}
+        onHide={hide}
+        onRename={rename}
+        loading={isLoading}
+      />
     </div>
   );
 }

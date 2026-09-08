@@ -43,6 +43,8 @@ pub(super) fn with_write_lock<T>(
 
 /// Пересчитывает предвычисленные таблицы дашборда чата с нуля —
 /// `chats.word_count`/`char_count`, `activity_buckets`, `person_message_stats`
+/// (включая `first_ts`/`last_ts` — период активности участника, экран
+/// «Участники» читает их отсюда же, не только `message_count`)
 /// — и выставляет `chats.dashboard_ready=1`. Идемпотентна: сперва чистит
 /// старые строки этого `chat_id`, потом заливает свежие, поэтому её можно
 /// звать и после первичного импорта (в той же транзакции, что и остальные
@@ -94,8 +96,9 @@ pub fn recompute_dashboard_metrics(conn: &Connection, chat_id: i64) -> rusqlite:
         }
 
         conn.execute(
-            "INSERT INTO person_message_stats (chat_id, person_id, message_count, text_len_sum) \
-             SELECT chat_id, person_id, COUNT(*), COALESCE(SUM(text_len), 0) \
+            "INSERT INTO person_message_stats \
+             (chat_id, person_id, message_count, text_len_sum, first_ts, last_ts) \
+             SELECT chat_id, person_id, COUNT(*), COALESCE(SUM(text_len), 0), MIN(ts), MAX(ts) \
              FROM messages WHERE chat_id = ?1 AND person_id IS NOT NULL \
              GROUP BY person_id",
             params![chat_id],
