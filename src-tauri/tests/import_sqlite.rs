@@ -56,6 +56,10 @@ fn fresh_db() -> Connection {
         "../src/db/migrations/0009_reaction_actor_emoji.sql"
     ))
     .expect("apply migration 0009");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0010_reaction_favorite_emoji.sql"
+    ))
+    .expect("apply migration 0010");
     conn
 }
 
@@ -1151,29 +1155,60 @@ fn reactions_overview_reports_aggregates_top_emoji_and_incomplete_given_flag() {
         .expect("fire must be present");
     assert_eq!(fire.count, 4);
 
-    // Кто ставит: Аня — на все 23 текстовых сообщения, Боря — на те же 23
-    // плюс на фото Ани (24), Вера — на 5.
+    // Таблица «Обмен реакциями» — топ-8 по суммарной активности
+    // (given+received). Первые 4 места однозначны по значению (27, 24,
+    // 6, 5), оставшиеся 4 занимают ровно 4 человека с received=3
+    // (Света/Цветана/Яна/Дуся) — вся группа помещается без разрыва по
+    // границе тай-брейка, так что множество топ-8 детерминировано, даже
+    // если порядок внутри равных значений — нет.
+    assert_eq!(summary.exchange.len(), 8);
+
     let ana = summary
-        .given
+        .exchange
         .iter()
-        .find(|p| p.display_name.as_deref() == Some("Аня"))
-        .expect("Аня must appear in `given`");
-    assert_eq!(ana.count, 23);
+        .find(|r| r.display_name.as_deref() == Some("Аня"))
+        .expect("Аня must appear in `exchange`");
+    assert_eq!(ana.given_count, 23);
+    assert_eq!(ana.received_count, 4, "from her own photo message's 🔥");
+    let ana_favorite = ana
+        .favorite_given
+        .as_ref()
+        .expect("Аня must have a favorite emoji");
+    assert_eq!(ana_favorite.emoji.as_deref(), Some("👍"));
+
     let borya = summary
-        .given
+        .exchange
         .iter()
-        .find(|p| p.display_name.as_deref() == Some("Боря"))
-        .expect("Боря must appear in `given`");
-    assert_eq!(borya.count, 24);
+        .find(|r| r.display_name.as_deref() == Some("Боря"))
+        .expect("Боря must appear in `exchange`");
+    assert_eq!(borya.given_count, 24);
+    assert_eq!(borya.received_count, 0);
+    let borya_favorite = borya
+        .favorite_given
+        .as_ref()
+        .expect("Боря must have a favorite emoji");
+    assert_eq!(
+        borya_favorite.emoji.as_deref(),
+        Some("👍"),
+        "23 👍 vs 1 🔥 — 👍 must win"
+    );
 
     // Кому ставят: точное число, не зависит от неполноты `recent` — у
     // Маши оно должно отразить count=5 (не len(recent)=2) на её сообщении.
     let masha = summary
-        .received
+        .exchange
         .iter()
-        .find(|p| p.display_name.as_deref() == Some("Маша"))
-        .expect("Маша must appear in `received`");
-    assert_eq!(masha.count, 6, "5 (👍, edge case) + 1 (custom_emoji)");
+        .find(|r| r.display_name.as_deref() == Some("Маша"))
+        .expect("Маша must appear in `exchange`");
+    assert_eq!(
+        masha.received_count, 6,
+        "5 (👍, edge case) + 1 (custom_emoji)"
+    );
+    assert_eq!(masha.given_count, 0);
+    assert!(
+        masha.favorite_given.is_none(),
+        "Маша never reacts to anything in this fixture"
+    );
 }
 
 #[test]
@@ -1257,6 +1292,10 @@ fn get_top_reacted_messages_ranks_by_total_count_and_carries_preview_text() {
     assert_eq!(leader.total_count, 6);
     assert_eq!(leader.display_name.as_deref(), Some("Маша"));
     assert_eq!(
+        leader.tg_msg_id, 28,
+        "must be the export's own message id, not the internal SQLite rowid"
+    );
+    assert_eq!(
         leader.preview_text.as_deref(),
         Some("привет всем, я Маша"),
         "preview must be captured at import time, since `messages` itself does not store text"
@@ -1270,6 +1309,7 @@ fn get_top_reacted_messages_ranks_by_total_count_and_carries_preview_text() {
     // count=4, второе по счёту после Маши.
     let photo_entry = &top[1];
     assert_eq!(photo_entry.total_count, 4);
+    assert_eq!(photo_entry.tg_msg_id, 59);
     assert_eq!(photo_entry.display_name.as_deref(), Some("Аня"));
     assert_eq!(
         photo_entry.preview_text.as_deref(),
@@ -1308,14 +1348,24 @@ fn merging_people_recombines_given_reaction_counts_not_just_received() {
         panic!("chat must still report Available after a merge");
     };
     let merged = summary
-        .given
+        .exchange
         .iter()
-        .find(|p| p.person_id == ana.id)
+        .find(|r| r.person_id == ana.id)
         .expect("the surviving person must carry the combined given count");
-    assert_eq!(merged.count, 47, "23 (Аня) + 24 (Боря)");
+    assert_eq!(merged.given_count, 47, "23 (Аня) + 24 (Боря)");
+    assert_eq!(
+        merged
+            .favorite_given
+            .as_ref()
+            .expect("must still have a favorite emoji after the merge")
+            .emoji
+            .as_deref(),
+        Some("👍"),
+        "combined 46 👍 (23 own + 23 Борины) vs 1 🔥 (Борин) — 👍 must still win"
+    );
     assert!(
-        summary.given.iter().all(|p| p.person_id != borya.id),
-        "the merged-away person must not linger in `given`"
+        summary.exchange.iter().all(|r| r.person_id != borya.id),
+        "the merged-away person must not linger in `exchange`"
     );
 }
 
@@ -1416,5 +1466,54 @@ fn get_reaction_person_breakdown_reports_total_without_rows_for_pre_migration_da
     assert!(
         breakdown.given.is_empty(),
         "a NULL-kind row (pre-migration data) must not surface as a fake emoji category"
+    );
+}
+
+#[test]
+fn recompute_reaction_person_stats_leaves_favorite_given_null_for_untyped_reaction_actors() {
+    // Тот же приём, что и в get_reaction_person_breakdown_reports_total_
+    // without_rows_for_pre_migration_data, но через настоящий пересчёт
+    // (recompute_reaction_person_stats), а не руками собранную строку —
+    // NULL-kind реакция должна посчитаться в given_count (реакция была),
+    // но не может стать "любимой", потому что у неё нет типа.
+    //
+    // group_50_members.json (не three_day_chat.json): нужен чат с
+    // reactions_supported=1, иначе get_reactions_overview вернёт
+    // NotInExport ещё до того, как дело дойдёт до exchange. Катя (id
+    // ранняя, среди первых участников) в этой фикстуре никогда не
+    // реагирует и не получает реакций — чистый лист для синтетической
+    // NULL-kind строки.
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "group_50_members.json");
+    let people = people_ordered_by_name(&conn, chat.id);
+    let katya = people
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Катя"))
+        .unwrap();
+
+    conn.execute(
+        "INSERT INTO reaction_actors (chat_id, message_id, person_id, kind, emoji, document_id) \
+         SELECT ?1, id, ?2, NULL, NULL, NULL FROM messages WHERE chat_id = ?1 LIMIT 1",
+        params![chat.id, katya.id],
+    )
+    .unwrap();
+
+    telegram_stats_lib::metrics::recompute_reaction_person_stats(&conn, chat.id).unwrap();
+
+    // Катя ставит всего 1 реакцию в этой фикстуре — не попадёт в топ-8
+    // exchange (там уже 8 человек с 3+), поэтому читаем строку
+    // reaction_person_stats напрямую, а не через get_reactions_overview.
+    let (given_count, top_given_kind): (i64, Option<String>) = conn
+        .query_row(
+            "SELECT given_count, top_given_kind FROM reaction_person_stats \
+             WHERE chat_id = ?1 AND person_id = ?2",
+            params![chat.id, katya.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(given_count, 1);
+    assert!(
+        top_given_kind.is_none(),
+        "a NULL-kind reaction_actors row must not produce a fake favorite emoji"
     );
 }

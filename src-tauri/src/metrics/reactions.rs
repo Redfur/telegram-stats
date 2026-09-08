@@ -4,10 +4,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use super::precompute::with_write_lock;
 
-/// Сколько участников показываем в "кто ставит"/"кому ставят" на карточке
-/// сводки — витрина, не полный список (как топ-эмодзи, которых обычно
-/// мало, или как топ сообщений ниже).
-const TOP_PERSON_LIMIT: i64 = 10;
+/// Топ-8 строк в таблице «Обмен реакциями» (макет «Дашборд», ход t8/8a)
+/// — витрина, не полный список (как топ-эмодзи, которых обычно мало, или
+/// как топ сообщений ниже).
+const TOP_EXCHANGE_LIMIT: i64 = 8;
 const TOP_REACTED_MESSAGES_LIMIT: i64 = 10;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -19,10 +19,23 @@ pub struct ReactionEmojiCount {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct ReactionPersonCount {
+pub struct ReactionEmojiRef {
+    pub kind: String,
+    pub emoji: Option<String>,
+    pub document_id: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ReactionExchangeRow {
     pub person_id: i64,
     pub display_name: Option<String>,
-    pub count: i64,
+    pub given_count: i64,
+    pub received_count: i64,
+    /// Самый частый тип реакции, который ставит этот участник (миграция
+    /// `0010`) — `None`, если у него нет ни одной типизированной строки в
+    /// `reaction_actors` (либо не ставил вовсе, либо все его реакции
+    /// посчитаны до миграции `0009`, см. `PersonReactionBreakdown`).
+    pub favorite_given: Option<ReactionEmojiRef>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -31,13 +44,12 @@ pub struct ReactionsSummary {
     pub reacted_message_count: i64,
     pub total_messages: i64,
     pub top_emoji: Vec<ReactionEmojiCount>,
-    pub given: Vec<ReactionPersonCount>,
-    pub received: Vec<ReactionPersonCount>,
+    pub exchange: Vec<ReactionExchangeRow>,
     /// `true` — хотя бы у одной реакции в чате `count` больше числа
     /// известных акторов: Telegram отдаёт в `recent` не полный список
-    /// реагировавших (docs/SPEC.md §8.5). "Кому ставят" (`received`)
+    /// реагировавших (docs/SPEC.md §8.5). "Получает" в таблице обмена
     /// остаётся точным в любом случае — считается по авторитетному
-    /// `count`, а не по `recent`; страдает только "кто ставит" (`given`).
+    /// `count`, а не по `recent`; страдает только "ставит".
     pub given_data_incomplete: bool,
 }
 
@@ -57,26 +69,40 @@ pub enum ReactionsOverview {
     Available(ReactionsSummary),
 }
 
-fn top_person_stats(
+/// Топ-8 участников по суммарной активности (даёт + получает) для таблицы
+/// «Обмен реакциями» — читает `reaction_person_stats` целиком за один
+/// проход (а не двумя отдельными топами по каждой стороне, как раньше),
+/// подтягивает и `top_given_*` (миграция `0010`) для колонки «Чаще
+/// ставит».
+fn get_reaction_exchange(
     conn: &Connection,
     chat_id: i64,
-    count_column: &str,
-) -> rusqlite::Result<Vec<ReactionPersonCount>> {
-    let sql = format!(
-        "SELECT rps.person_id, p.display_name, rps.{count_column} \
+) -> rusqlite::Result<Vec<ReactionExchangeRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT rps.person_id, p.display_name, rps.given_count, rps.received_count, \
+                rps.top_given_kind, rps.top_given_emoji, rps.top_given_document_id \
          FROM reaction_person_stats rps \
          JOIN people p ON p.id = rps.person_id \
-         WHERE rps.chat_id = ?1 AND rps.{count_column} > 0 \
+         WHERE rps.chat_id = ?1 AND (rps.given_count > 0 OR rps.received_count > 0) \
            AND p.merged_into IS NULL AND p.is_hidden = 0 \
-         ORDER BY rps.{count_column} DESC \
-         LIMIT {TOP_PERSON_LIMIT}"
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(params![chat_id], |row| {
-        Ok(ReactionPersonCount {
+         ORDER BY (rps.given_count + rps.received_count) DESC \
+         LIMIT ?2",
+    )?;
+    let rows = stmt.query_map(params![chat_id, TOP_EXCHANGE_LIMIT], |row| {
+        let top_given_kind: Option<String> = row.get(4)?;
+        let top_given_emoji: Option<String> = row.get(5)?;
+        let top_given_document_id: Option<String> = row.get(6)?;
+        let favorite_given = top_given_kind.map(|kind| ReactionEmojiRef {
+            kind,
+            emoji: top_given_emoji,
+            document_id: top_given_document_id,
+        });
+        Ok(ReactionExchangeRow {
             person_id: row.get(0)?,
             display_name: row.get(1)?,
-            count: row.get(2)?,
+            given_count: row.get(2)?,
+            received_count: row.get(3)?,
+            favorite_given,
         })
     })?;
     rows.collect()
@@ -133,8 +159,7 @@ pub fn get_reactions_overview(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    let given = top_person_stats(conn, chat_id, "given_count")?;
-    let received = top_person_stats(conn, chat_id, "received_count")?;
+    let exchange = get_reaction_exchange(conn, chat_id)?;
 
     let given_data_incomplete: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM message_reactions \
@@ -148,8 +173,7 @@ pub fn get_reactions_overview(
         reacted_message_count,
         total_messages,
         top_emoji,
-        given,
-        received,
+        exchange,
         given_data_incomplete,
     }))
 }
@@ -157,6 +181,10 @@ pub fn get_reactions_overview(
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct TopReactedMessage {
     pub message_id: i64,
+    /// Telegram-id сообщения (`messages.tg_msg_id`), не внутренний rowid
+    /// — только он годится для ссылки `t.me/c/<tg_chat_id>/<tg_msg_id>`,
+    /// строит её фронт (знает `tg_chat_id`/`chat_type` текущего чата).
+    pub tg_msg_id: i64,
     pub person_id: Option<i64>,
     pub display_name: Option<String>,
     pub ts: Option<i64>,
@@ -231,8 +259,9 @@ pub fn get_top_reacted_messages(
     }
 
     let mut stmt = conn.prepare(
-        "SELECT mr.message_id, m.person_id, p.display_name, m.ts, mrp.preview_text, SUM(mr.count), \
-                m.media_type, m.has_photo, m.has_file, m.has_poll, m.has_location, m.has_contact \
+        "SELECT mr.message_id, m.tg_msg_id, m.person_id, p.display_name, m.ts, mrp.preview_text, \
+                SUM(mr.count), m.media_type, m.has_photo, m.has_file, m.has_poll, m.has_location, \
+                m.has_contact \
          FROM message_reactions mr \
          JOIN messages m ON m.id = mr.message_id \
          LEFT JOIN people p ON p.id = m.person_id \
@@ -244,24 +273,25 @@ pub fn get_top_reacted_messages(
          LIMIT ?2",
     )?;
     let rows = stmt.query_map(params![chat_id, TOP_REACTED_MESSAGES_LIMIT], |row| {
-        let media_type: Option<String> = row.get(6)?;
+        let media_type: Option<String> = row.get(7)?;
         let content_label = media_content_label(
             media_type.as_deref(),
-            row.get::<_, i64>(7)? != 0,
             row.get::<_, i64>(8)? != 0,
             row.get::<_, i64>(9)? != 0,
             row.get::<_, i64>(10)? != 0,
             row.get::<_, i64>(11)? != 0,
+            row.get::<_, i64>(12)? != 0,
         )
         .map(str::to_string);
         Ok(TopReactedMessage {
             message_id: row.get(0)?,
-            person_id: row.get(1)?,
-            display_name: row.get(2)?,
-            ts: row.get(3)?,
-            preview_text: row.get(4)?,
+            tg_msg_id: row.get(1)?,
+            person_id: row.get(2)?,
+            display_name: row.get(3)?,
+            ts: row.get(4)?,
+            preview_text: row.get(5)?,
             content_label,
-            total_count: row.get(5)?,
+            total_count: row.get(6)?,
         })
     })?;
     rows.collect()
@@ -433,19 +463,71 @@ pub fn recompute_reaction_person_stats(conn: &Connection, chat_id: i64) -> rusql
             }
         }
 
+        // Самая частая реакция, которую человек ставит (миграция `0010`,
+        // колонка "Чаще ставит" в таблице обмена) — только по строкам с
+        // известным типом (`kind IS NOT NULL`, т.е. вставленным после
+        // миграции `0009`), тем же приёмом, что и `given_data_incomplete`/
+        // `PersonReactionBreakdown` не путает старые NULL-строки с
+        // отдельной "неизвестной" категорией.
+        type EmojiKey = (String, Option<String>, Option<String>);
+        let mut favorite_given: HashMap<i64, HashMap<EmojiKey, i64>> = HashMap::new();
+        {
+            let mut stmt = conn.prepare(
+                "SELECT person_id, kind, emoji, document_id, COUNT(*) FROM reaction_actors \
+                 WHERE chat_id = ?1 AND person_id IS NOT NULL AND kind IS NOT NULL \
+                 GROUP BY person_id, kind, emoji, document_id",
+            )?;
+            let rows = stmt.query_map(params![chat_id], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })?;
+            for r in rows {
+                let (pid, kind, emoji, document_id, count) = r?;
+                favorite_given
+                    .entry(pid)
+                    .or_default()
+                    .insert((kind, emoji, document_id), count);
+            }
+        }
+        // Максимум по count, тай-брейк — по (kind, emoji) по алфавиту, для
+        // детерминированного результата при равных счётчиках.
+        let favorite_given: HashMap<i64, EmojiKey> = favorite_given
+            .into_iter()
+            .filter_map(|(pid, counts)| {
+                counts
+                    .into_iter()
+                    .max_by(|(ka, ca), (kb, cb)| ca.cmp(cb).then_with(|| kb.cmp(ka)))
+                    .map(|(key, _)| (pid, key))
+            })
+            .collect();
+
         let mut all_ids: HashSet<i64> = given.keys().copied().collect();
         all_ids.extend(received.keys().copied());
 
         let mut insert = conn.prepare(
-            "INSERT INTO reaction_person_stats (chat_id, person_id, given_count, received_count) \
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO reaction_person_stats \
+             (chat_id, person_id, given_count, received_count, \
+              top_given_kind, top_given_emoji, top_given_document_id) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         )?;
         for pid in all_ids {
+            let (top_kind, top_emoji, top_doc) = match favorite_given.get(&pid) {
+                Some((kind, emoji, doc)) => (Some(kind.as_str()), emoji.as_deref(), doc.as_deref()),
+                None => (None, None, None),
+            };
             insert.execute(params![
                 chat_id,
                 pid,
                 given.get(&pid).copied().unwrap_or(0),
                 received.get(&pid).copied().unwrap_or(0),
+                top_kind,
+                top_emoji,
+                top_doc,
             ])?;
         }
 
@@ -464,8 +546,7 @@ mod tests {
             reacted_message_count: 2,
             total_messages: 10,
             top_emoji: vec![],
-            given: vec![],
-            received: vec![],
+            exchange: vec![],
             given_data_incomplete: false,
         });
         let json = serde_json::to_string(&overview).unwrap();

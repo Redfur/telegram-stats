@@ -19,6 +19,6 @@ pub use queries::{
 pub use reactions::{
     get_reaction_person_breakdown, get_reactions_overview, get_top_reacted_messages,
     recompute_reaction_metrics, recompute_reaction_person_stats, PersonReactionBreakdown,
-    ReactionEmojiCount, ReactionPersonCount, ReactionsOverview, ReactionsSummary,
+    ReactionEmojiCount, ReactionEmojiRef, ReactionExchangeRow, ReactionsOverview, ReactionsSummary,
     TopReactedMessage,
 };
