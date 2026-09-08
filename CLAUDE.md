@@ -225,6 +225,30 @@ ETA в прогрессе импорта, параллельные импорт�
 `tauri.conf.json` имеет `security.csp: null` (нужно будет задать CSP по
 требованию из §4 `docs/SPEC.md`).
 
+CI в `.github/workflows/`: `ci.yml` (push в `main` и PR) гоняет тайпчек +
+`vite build` фронта на `ubuntu-latest` и `cargo fmt --check`/`cargo clippy
+-D warnings`/`cargo test` на `windows-latest` — Rust-джобу держим на
+Windows, а не Linux, чтобы не тащить в CI `libwebkit2gtk`/GTK-зависимости
+Tauri под таргет, который всё равно не собираем; `build.yml` —
+собственно Windows-сборка (`pnpm tauri build`), но только по ручному
+`workflow_dispatch`, артефакт (NSIS-инсталлятор) уходит в
+`actions/upload-artifact` на 14 дней, без публикации; `release.yml` —
+по тегу `v*.*.*` пересобирает то же самое и публикует **черновик**
+GitHub Release с автосгенерированными по коммитам release notes
+(`softprops/action-gh-release`, `generate_release_notes: true`) —
+черновик, не публикация, чтобы можно было руками поправить текст перед
+тем как релиз станет виден. Перед сборкой релизный workflow сверяет тег
+с `version` в `tauri.conf.json` (`jq`) и падает при расхождении — три
+места с версией (`package.json`/`Cargo.toml`/`tauri.conf.json`)
+синхронизируются вручную, эта проверка ловит забытый бамп хотя бы для
+одного из них. `bundle.targets` в `tauri.conf.json` сужен с `"all"` до
+`["nsis"]` — MSI (WiX) не нужен без сценария корпоративного деплоя, а
+сборка вдвое короче. В приложении сознательно нет проверки версии/
+предложения обновиться — это был бы HTTP-запрос в рантайме, что прямо
+запрещено правилом «никакой сети в рантайме» выше; сверка версии с
+GitHub Releases остаётся ручной для пользователя. Показ текущей версии
+в UI (без сети) в этом срезе не сделан.
+
 ## Конвенции
 
 - Ошибки в Rust — `thiserror` для типов, `anyhow` только на границе Tauri-команд
