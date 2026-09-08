@@ -1155,13 +1155,20 @@ fn reactions_overview_reports_aggregates_top_emoji_and_incomplete_given_flag() {
         .expect("fire must be present");
     assert_eq!(fire.count, 4);
 
-    // Таблица «Обмен реакциями» — топ-8 по суммарной активности
-    // (given+received). Первые 4 места однозначны по значению (27, 24,
-    // 6, 5), оставшиеся 4 занимают ровно 4 человека с received=3
-    // (Света/Цветана/Яна/Дуся) — вся группа помещается без разрыва по
-    // границе тай-брейка, так что множество топ-8 детерминировано, даже
-    // если порядок внутри равных значений — нет.
-    assert_eq!(summary.exchange.len(), 8);
+    // Таблица «Обмен реакциями» — без ограничения сверху (пользователь
+    // должен видеть весь список, не только самых активных). Ожидаемое
+    // число участников с любой активностью: 23 автора реагировавших
+    // текстовых сообщений (id 28-50) + Аня (автор фото id 59, входит и
+    // в given, и в received) + Боря + Вера (только given, никогда не
+    // авторы реагировавших сообщений) = 23 + 1 + 2 = 26.
+    assert_eq!(summary.exchange.len(), 26);
+    assert!(
+        summary
+            .exchange
+            .iter()
+            .all(|r| r.given_count > 0 || r.received_count > 0),
+        "no zero-activity rows should leak into the exchange table"
+    );
 
     let ana = summary
         .exchange
@@ -1304,6 +1311,15 @@ fn get_top_reacted_messages_ranks_by_total_count_and_carries_preview_text() {
         leader.content_label, None,
         "a plain text message has no media kind"
     );
+    assert_eq!(
+        leader.reactions.len(),
+        2,
+        "Маша's message has 👍 (count=5) and custom_emoji (count=1)"
+    );
+    assert_eq!(leader.reactions[0].emoji.as_deref(), Some("👍"));
+    assert_eq!(leader.reactions[0].count, 5);
+    assert_eq!(leader.reactions[1].kind, "custom_emoji");
+    assert_eq!(leader.reactions[1].count, 1);
 
     // Ани фото без подписи (id 59, 🔥 count=4) — единственное сообщение с
     // count=4, второе по счёту после Маши.
@@ -1321,6 +1337,9 @@ fn get_top_reacted_messages_ranks_by_total_count_and_carries_preview_text() {
         Some("Фото"),
         "a textless message must surface what kind of content it was, not just an em dash"
     );
+    assert_eq!(photo_entry.reactions.len(), 1);
+    assert_eq!(photo_entry.reactions[0].emoji.as_deref(), Some("🔥"));
+    assert_eq!(photo_entry.reactions[0].count, 4);
 }
 
 #[test]

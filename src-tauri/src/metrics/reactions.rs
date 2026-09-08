@@ -4,10 +4,6 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use super::precompute::with_write_lock;
 
-/// Топ-8 строк в таблице «Обмен реакциями» (макет «Дашборд», ход t8/8a)
-/// — витрина, не полный список (как топ-эмодзи, которых обычно мало, или
-/// как топ сообщений ниже).
-const TOP_EXCHANGE_LIMIT: i64 = 8;
 const TOP_REACTED_MESSAGES_LIMIT: i64 = 10;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -69,11 +65,13 @@ pub enum ReactionsOverview {
     Available(ReactionsSummary),
 }
 
-/// Топ-8 участников по суммарной активности (даёт + получает) для таблицы
-/// «Обмен реакциями» — читает `reaction_person_stats` целиком за один
-/// проход (а не двумя отдельными топами по каждой стороне, как раньше),
-/// подтягивает и `top_given_*` (миграция `0010`) для колонки «Чаще
-/// ставит».
+/// Все участники с ненулевой активностью для таблицы «Обмен реакциями» —
+/// читает `reaction_person_stats` целиком за один проход (а не двумя
+/// отдельными топами по каждой стороне, как раньше), подтягивает и
+/// `top_given_*` (миграция `0010`) для колонки «Чаще ставит». Без LIMIT —
+/// список отсортирован по убыванию активности, но урезать его самой
+/// метрике не с руки (сколько показывать — дело фронта, если вообще
+/// понадобится).
 fn get_reaction_exchange(
     conn: &Connection,
     chat_id: i64,
@@ -85,10 +83,9 @@ fn get_reaction_exchange(
          JOIN people p ON p.id = rps.person_id \
          WHERE rps.chat_id = ?1 AND (rps.given_count > 0 OR rps.received_count > 0) \
            AND p.merged_into IS NULL AND p.is_hidden = 0 \
-         ORDER BY (rps.given_count + rps.received_count) DESC \
-         LIMIT ?2",
+         ORDER BY (rps.given_count + rps.received_count) DESC",
     )?;
-    let rows = stmt.query_map(params![chat_id, TOP_EXCHANGE_LIMIT], |row| {
+    let rows = stmt.query_map(params![chat_id], |row| {
         let top_given_kind: Option<String> = row.get(4)?;
         let top_given_emoji: Option<String> = row.get(5)?;
         let top_given_document_id: Option<String> = row.get(6)?;
@@ -194,6 +191,10 @@ pub struct TopReactedMessage {
     /// `preview_text` (у фото с подписью оба поля непустые, фронт сам
     /// решает, что показать). `None` для чистого текста без медиа.
     pub content_label: Option<String>,
+    /// Разбивка по типам реакций на этом сообщении, по убыванию `count`
+    /// (макет «Дашборд», ход t8/8a — карточка «Самые залайканные»
+    /// показывает не только суммарное число, но и какие именно эмодзи).
+    pub reactions: Vec<ReactionEmojiCount>,
     pub total_count: i64,
 }
 
@@ -272,29 +273,70 @@ pub fn get_top_reacted_messages(
          ORDER BY SUM(mr.count) DESC \
          LIMIT ?2",
     )?;
-    let rows = stmt.query_map(params![chat_id, TOP_REACTED_MESSAGES_LIMIT], |row| {
-        let media_type: Option<String> = row.get(7)?;
-        let content_label = media_content_label(
-            media_type.as_deref(),
-            row.get::<_, i64>(8)? != 0,
-            row.get::<_, i64>(9)? != 0,
-            row.get::<_, i64>(10)? != 0,
-            row.get::<_, i64>(11)? != 0,
-            row.get::<_, i64>(12)? != 0,
-        )
-        .map(str::to_string);
-        Ok(TopReactedMessage {
-            message_id: row.get(0)?,
-            tg_msg_id: row.get(1)?,
-            person_id: row.get(2)?,
-            display_name: row.get(3)?,
-            ts: row.get(4)?,
-            preview_text: row.get(5)?,
-            content_label,
-            total_count: row.get(6)?,
-        })
-    })?;
-    rows.collect()
+    let mut messages: Vec<TopReactedMessage> = stmt
+        .query_map(params![chat_id, TOP_REACTED_MESSAGES_LIMIT], |row| {
+            let media_type: Option<String> = row.get(7)?;
+            let content_label = media_content_label(
+                media_type.as_deref(),
+                row.get::<_, i64>(8)? != 0,
+                row.get::<_, i64>(9)? != 0,
+                row.get::<_, i64>(10)? != 0,
+                row.get::<_, i64>(11)? != 0,
+                row.get::<_, i64>(12)? != 0,
+            )
+            .map(str::to_string);
+            Ok(TopReactedMessage {
+                message_id: row.get(0)?,
+                tg_msg_id: row.get(1)?,
+                person_id: row.get(2)?,
+                display_name: row.get(3)?,
+                ts: row.get(4)?,
+                preview_text: row.get(5)?,
+                content_label,
+                reactions: Vec::new(),
+                total_count: row.get(6)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    // Разбивка по эмодзи для этих же top-N сообщений — тот же ранжирующий
+    // подзапрос (LIMIT ?2), чтобы не тащить динамический список id через
+    // отдельный `IN (...)`. `message_reactions` уже ограничен только
+    // реагировавшими сообщениями — второй проход по нему дешёвый.
+    let mut per_message: HashMap<i64, Vec<ReactionEmojiCount>> = HashMap::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT mr.message_id, mr.kind, mr.emoji, mr.document_id, mr.count \
+             FROM message_reactions mr \
+             WHERE mr.chat_id = ?1 AND mr.message_id IN ( \
+               SELECT message_id FROM message_reactions WHERE chat_id = ?1 \
+               GROUP BY message_id ORDER BY SUM(count) DESC LIMIT ?2 \
+             ) \
+             ORDER BY mr.message_id, mr.count DESC",
+        )?;
+        let rows = stmt.query_map(params![chat_id, TOP_REACTED_MESSAGES_LIMIT], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                ReactionEmojiCount {
+                    kind: row.get(1)?,
+                    emoji: row.get(2)?,
+                    document_id: row.get(3)?,
+                    count: row.get(4)?,
+                },
+            ))
+        })?;
+        for r in rows {
+            let (message_id, emoji) = r?;
+            per_message.entry(message_id).or_default().push(emoji);
+        }
+    }
+    for m in &mut messages {
+        if let Some(list) = per_message.remove(&m.message_id) {
+            m.reactions = list;
+        }
+    }
+
+    Ok(messages)
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
