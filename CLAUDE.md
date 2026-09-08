@@ -100,7 +100,9 @@ Oswald/Manrope (и там, и в коде) — у Барлоу нет кирил
 разбора участников, `0004` — `messages.media_type`/`has_photo`/`has_file`/
 `has_poll`/`has_location`/`has_contact`/`forwarded_from`/`edited_ts`/
 `duration_seconds` и `chats.message_types_ready` для блока «Типы
-сообщений»), Tauri-команды (`import_chat`, `cancel_import`, `list_chats`,
+сообщений», `0005` — `chats.word_count`/`char_count`/`dashboard_ready` и
+таблицы `activity_buckets`/`person_message_stats` для precompute сводки/
+активности/топа участников), Tauri-команды (`import_chat`, `cancel_import`, `list_chats`,
 `delete_chat`, `get_people`, `merge_people`, `hide_person`,
 `rename_person`, `get_chat_totals`, `get_activity_series`,
 `get_top_participants`, `get_message_type_overview`,
@@ -137,8 +139,22 @@ time-series метрикой. `participant_count` в `get_chat_totals`/
 (частота/длительность). `chats.message_types_ready` отличает чат,
 прошедший через актуальный импортер, от чата, который ждёт переимпорта
 — фронт (`MessageTypesBlock`) в последнем случае показывает
-`UnavailableCard` вместо лживых нулей. 39 Rust-тестов зелёные, `cargo
-clippy` чист.
+`UnavailableCard` вместо лживых нулей. `src-tauri/src/metrics/precompute.rs`
+— `recompute_dashboard_metrics` считает сводку/активность/топ участников
+один раз в конце `import_into_db`, а не при каждом открытии чата
+(`get_chat_totals`/`get_activity_series`/`get_top_participants` раньше
+сканировали `messages` вживую на каждое переключение чата в интерфейсе —
+тормозило на больших чатах). Это не новая метрика вроде типов сообщений,
+поэтому чат, импортированный до этого среза, не показывает «недоступно»,
+а лениво досчитывается при первом чтении (`ensure_dashboard_ready`,
+идемпотентно). `merge_people` физически переносит `messages.person_id` на
+`primary_id`, из-за чего `person_message_stats` пересчитывается сразу
+после слияния — единственное место вне импорта, где precomputed-данные
+могут разойтись с `messages` (`hide_person`/`rename_person` таблиц не
+касаются, они только правят `people`). Разбор типов сообщений
+(`message_type_overview`/`detail`) пока остаётся на живых запросах —
+следующий срез той же оптимизации. 42 Rust-теста зелёные, `cargo clippy`
+чист.
 ETA в прогрессе импорта, параллельные импорты, явный выбор при конфликте
 `tg_chat_id` без `id` в старом экспорте, авто-детект дублей/ботов в шаге
 разбора участников и остальные метрики из SPEC §9 — сознательно не в

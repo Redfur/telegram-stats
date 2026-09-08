@@ -1,6 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
-use super::granularity::{pick_granularity, strftime_bucket_expr, Granularity};
+use super::granularity::{pick_granularity, Granularity};
+use super::precompute::ensure_dashboard_ready;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ChatTotals {
@@ -12,21 +13,23 @@ pub struct ChatTotals {
     pub last_msg_ts: Option<i64>,
 }
 
-/// Сводка чата — сообщений/слов/символов/период. `message_count` читается
-/// из денормализованной колонки `chats` (без сканирования), слова/символы
-/// — одним `SUM` по `messages`. `participant_count` — вживую по `people`
-/// (не денормализованная колонка `chats`, которая — просто снимок на
-/// момент импорта и не отражает merge/hide из разбора участников, макет
-/// 3d): дёшево при реалистичном числе участников, всегда согласовано.
+/// Сводка чата — сообщений/слов/символов/период. `message_count`,
+/// `word_count`, `char_count` читаются из денормализованных колонок
+/// `chats` (без сканирования `messages` — досчитаны один раз при импорте
+/// или лениво при первом открытии чата, импортированного раньше этого
+/// среза, см. `precompute::ensure_dashboard_ready`). `participant_count` —
+/// вживую по `people` (не денормализованная колонка `chats`, которая —
+/// просто снимок на момент импорта и не отражает merge/hide из разбора
+/// участников, макет 3d): дёшево при реалистичном числе участников,
+/// всегда согласовано.
 pub fn get_chat_totals(conn: &Connection, chat_id: i64) -> rusqlite::Result<Option<ChatTotals>> {
+    ensure_dashboard_ready(conn, chat_id)?;
     conn.query_row(
         "SELECT c.message_count, \
                 (SELECT COUNT(*) FROM people p WHERE p.chat_id = c.id AND p.merged_into IS NULL AND p.is_hidden = 0), \
-                c.first_msg_ts, c.last_msg_ts, \
-                COALESCE(SUM(m.word_count), 0), COALESCE(SUM(m.text_len), 0) \
-         FROM chats c LEFT JOIN messages m ON m.chat_id = c.id \
-         WHERE c.id = ?1 \
-         GROUP BY c.id",
+                c.first_msg_ts, c.last_msg_ts, c.word_count, c.char_count \
+         FROM chats c \
+         WHERE c.id = ?1",
         params![chat_id],
         |row| {
             Ok(ChatTotals {
@@ -57,10 +60,14 @@ pub struct ActivitySeries {
 /// Активность во времени, гранулярность выбирается один раз по периоду
 /// чата (docs/SPEC.md §7). `None`, если у чата нет ни одного сообщения с
 /// известным `ts` — графику нечего показывать, а не пустой график.
+/// Бакеты читаются из `activity_buckets` — предвычислены при импорте той
+/// же гранулярностью, что и выбирается здесь (см. `precompute.rs`).
 pub fn get_activity_series(
     conn: &Connection,
     chat_id: i64,
 ) -> rusqlite::Result<Option<ActivitySeries>> {
+    ensure_dashboard_ready(conn, chat_id)?;
+
     let bounds: Option<(Option<i64>, Option<i64>)> = conn
         .query_row(
             "SELECT first_msg_ts, last_msg_ts FROM chats WHERE id = ?1",
@@ -74,12 +81,8 @@ pub fn get_activity_series(
     };
 
     let granularity = pick_granularity(first_ts, last_ts);
-    let expr = strftime_bucket_expr(granularity);
-    let sql = format!(
-        "SELECT strftime('{expr}', ts, 'unixepoch') b, COUNT(*) FROM messages \
-         WHERE chat_id = ?1 AND ts IS NOT NULL GROUP BY b ORDER BY b"
-    );
-    let mut stmt = conn.prepare(&sql)?;
+    let mut stmt = conn
+        .prepare("SELECT bucket, count FROM activity_buckets WHERE chat_id = ?1 ORDER BY bucket")?;
     let buckets = stmt
         .query_map(params![chat_id], |row| {
             Ok(ActivityBucket {
@@ -111,7 +114,17 @@ pub struct TopParticipants {
     pub participants: Vec<ParticipantStat>,
 }
 
+/// Топ участников — читает `person_message_stats`, а не сканирует
+/// `messages` (см. `precompute.rs`). Таблица хранится по сырому
+/// `person_id`, но остаётся согласованной с текущим состоянием `people`:
+/// `merge_people` физически переносит `messages.person_id` на `primary_id`
+/// и сразу пересчитывает `person_message_stats` целиком — под id
+/// объединённого участника строка не задерживается, поэтому здесь
+/// достаточно простого `JOIN` + фильтра `merged_into IS NULL`, без
+/// дополнительного резолва цепочек слияний.
 pub fn get_top_participants(conn: &Connection, chat_id: i64) -> rusqlite::Result<TopParticipants> {
+    ensure_dashboard_ready(conn, chat_id)?;
+
     // Вживую, не из денормализованной chats.participant_count — та не
     // видит merge/hide из разбора участников (макет 3d).
     let participant_count: i64 = conn.query_row(
@@ -121,10 +134,11 @@ pub fn get_top_participants(conn: &Connection, chat_id: i64) -> rusqlite::Result
     )?;
 
     let mut stmt = conn.prepare(
-        "SELECT p.id, p.display_name, COUNT(*) mc, AVG(m.text_len) \
-         FROM messages m JOIN people p ON p.id = m.person_id \
-         WHERE m.chat_id = ?1 AND p.merged_into IS NULL AND p.is_hidden = 0 \
-         GROUP BY p.id ORDER BY mc DESC",
+        "SELECT p.id, p.display_name, pms.message_count, \
+                CAST(pms.text_len_sum AS REAL) / pms.message_count \
+         FROM person_message_stats pms JOIN people p ON p.id = pms.person_id \
+         WHERE pms.chat_id = ?1 AND p.merged_into IS NULL AND p.is_hidden = 0 \
+         ORDER BY pms.message_count DESC",
     )?;
     let participants = stmt
         .query_map(params![chat_id], |row| {

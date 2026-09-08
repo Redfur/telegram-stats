@@ -2,12 +2,13 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use telegram_stats_lib::db::{self, import_into_db, ImportContext};
 use telegram_stats_lib::import::{parse_export, ImportError, ParsedEvent};
 use telegram_stats_lib::metrics::{
-    get_message_type_detail, get_message_type_overview, get_top_participants,
-    granularity::pick_granularity, MessageTypeKind, MessageTypeSummaryStats, TypeTimeView,
+    get_activity_series, get_chat_totals, get_message_type_detail, get_message_type_overview,
+    get_top_participants, granularity::pick_granularity, MessageTypeKind, MessageTypeSummaryStats,
+    TypeTimeView,
 };
 
 fn people_ordered_by_name(conn: &Connection, chat_id: i64) -> Vec<db::PersonRow> {
@@ -32,14 +33,14 @@ fn fresh_db() -> Connection {
         "../src/db/migrations/0002_chat_source_size.sql"
     ))
     .expect("apply migration 0002");
+    conn.execute_batch(include_str!("../src/db/migrations/0003_people_aliases.sql"))
+        .expect("apply migration 0003");
+    conn.execute_batch(include_str!("../src/db/migrations/0004_message_types.sql"))
+        .expect("apply migration 0004");
     conn.execute_batch(include_str!(
-        "../src/db/migrations/0003_people_aliases.sql"
+        "../src/db/migrations/0005_dashboard_precompute.sql"
     ))
-    .expect("apply migration 0003");
-    conn.execute_batch(include_str!(
-        "../src/db/migrations/0004_message_types.sql"
-    ))
-    .expect("apply migration 0004");
+    .expect("apply migration 0005");
     conn
 }
 
@@ -144,7 +145,11 @@ fn source_file_size_round_trips_and_updates_on_reimport() {
     assert_eq!(first.source_file_size, Some(1000));
 
     let second = import_with_size(&mut conn, "three_day_chat.json", Some(2000));
-    assert_eq!(second.source_file_size, Some(2000), "must reflect the newest import, not the first");
+    assert_eq!(
+        second.source_file_size,
+        Some(2000),
+        "must reflect the newest import, not the first"
+    );
 
     let chats = db::list_chats(&conn).unwrap();
     let row = chats.iter().find(|c| c.id == first.id).unwrap();
@@ -206,7 +211,13 @@ fn a_json_object_without_messages_is_reported_as_not_a_telegram_export() {
 
     // валидный JSON, но не экспорт чата — нет поля `messages` вовсе
     let not_an_export = std::io::Cursor::new(br#"{"foo": "bar", "chats": {"list": []}}"#.to_vec());
-    let result = import_into_db(&mut conn, not_an_export, "not_an_export.json", None, &mut ctx);
+    let result = import_into_db(
+        &mut conn,
+        not_an_export,
+        "not_an_export.json",
+        None,
+        &mut ctx,
+    );
 
     assert!(matches!(result, Err(ImportError::NotTelegramExport)));
     assert!(
@@ -253,7 +264,10 @@ fn merging_people_moves_messages_and_drops_the_duplicate_row() {
     let after = people_ordered_by_name(&conn, chat.id);
     assert_eq!(after.len(), 2, "the merged person must no longer appear");
     let merged_primary = after.iter().find(|p| p.id == primary.id).unwrap();
-    assert_eq!(merged_primary.message_count, primary_before + duplicate_before);
+    assert_eq!(
+        merged_primary.message_count,
+        primary_before + duplicate_before
+    );
 
     let top = get_top_participants(&conn, chat.id).unwrap();
     assert!(
@@ -295,7 +309,10 @@ fn merge_and_hide_survive_a_reimport_of_the_same_chat() {
     // Сообщения при повторном импорте не накапливаются, а заменяются
     // (тот же принцип, что и в reimporting_the_same_chat_updates_instead_of_duplicating) —
     // поэтому ожидаем тот же общий счёт, что и до реимпорта, а не удвоенный.
-    let primary_after = visible_after_reimport.iter().find(|p| p.id == primary.id).unwrap();
+    let primary_after = visible_after_reimport
+        .iter()
+        .find(|p| p.id == primary.id)
+        .unwrap();
     assert_eq!(
         primary_after.message_count, combined_before_reimport,
         "re-imported messages for the merged-away duplicate must land on the primary, not vanish from every metric"
@@ -303,7 +320,10 @@ fn merge_and_hide_survive_a_reimport_of_the_same_chat() {
 
     let totals = get_top_participants(&conn, second.id).unwrap();
     assert!(
-        totals.participants.iter().all(|p| p.person_id != hidden_one.id),
+        totals
+            .participants
+            .iter()
+            .all(|p| p.person_id != hidden_one.id),
         "a hidden participant must stay hidden after re-import"
     );
 }
@@ -339,7 +359,10 @@ fn aliases_accumulate_distinct_display_names_for_the_same_person() {
     assert_eq!(people.len(), 1);
     let mut aliases = people[0].aliases.clone();
     aliases.sort();
-    assert_eq!(aliases, vec!["New Name".to_string(), "Old Name".to_string()]);
+    assert_eq!(
+        aliases,
+        vec!["New Name".to_string(), "Old Name".to_string()]
+    );
 }
 
 #[test]
@@ -357,7 +380,11 @@ fn message_type_overview_counts_every_kind_in_english_chat() {
     // документ-без-медиатипа). Text не эксклюзивен с остальными — считает
     // все сообщения с непустым текстом, включая подпись к фото (id 8).
     for c in &overview.counts {
-        let expected = if c.kind == MessageTypeKind::Text { 7 } else { 1 };
+        let expected = if c.kind == MessageTypeKind::Text {
+            7
+        } else {
+            1
+        };
         assert_eq!(c.count, expected, "kind {:?} count mismatch", c.kind);
     }
 }
@@ -377,7 +404,10 @@ fn a_photo_with_a_caption_counts_as_both_photo_and_text() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(both, 1, "the photo-with-caption fixture message must satisfy both predicates at once");
+    assert_eq!(
+        both, 1,
+        "the photo-with-caption fixture message must satisfy both predicates at once"
+    );
 }
 
 #[test]
@@ -402,7 +432,10 @@ fn message_type_detail_uses_frequency_variant_for_everything_else() {
     let chat = import(&mut conn, "english_chat.json");
 
     for kind in MessageTypeKind::ALL {
-        if matches!(kind, MessageTypeKind::VoiceMessage | MessageTypeKind::VideoMessage) {
+        if matches!(
+            kind,
+            MessageTypeKind::VoiceMessage | MessageTypeKind::VideoMessage
+        ) {
             continue;
         }
         let detail = get_message_type_detail(&conn, chat.id, kind, None)
@@ -422,7 +455,10 @@ fn message_type_detail_is_none_for_a_kind_with_zero_occurrences() {
     let chat = import(&mut conn, "three_day_chat.json");
 
     let detail = get_message_type_detail(&conn, chat.id, MessageTypeKind::Poll, None).unwrap();
-    assert!(detail.is_none(), "a kind with zero matches must return None, not an empty/zeroed detail");
+    assert!(
+        detail.is_none(),
+        "a kind with zero matches must return None, not an empty/zeroed detail"
+    );
 }
 
 #[test]
@@ -442,10 +478,17 @@ fn short_chat_disables_month_view_and_degrades_the_peak() {
         !detail.views_available.contains(&TypeTimeView::Month),
         "a ~2-day chat must not offer a month view"
     );
-    assert_eq!(detail.selected_view, TypeTimeView::DayOfWeek, "must fall back to the next available view");
+    assert_eq!(
+        detail.selected_view,
+        TypeTimeView::DayOfWeek,
+        "must fall back to the next available view"
+    );
     match detail.summary {
         MessageTypeSummaryStats::Frequency { peak, .. } => {
-            assert!(peak.is_none(), "too few buckets for a meaningful peak — must degrade, not lie");
+            assert!(
+                peak.is_none(),
+                "too few buckets for a meaningful peak — must degrade, not lie"
+            );
         }
         MessageTypeSummaryStats::Duration { .. } => panic!("edited is not duration-based"),
     }
@@ -457,9 +500,14 @@ fn requesting_an_unavailable_view_falls_back_instead_of_erroring() {
     let chat = import(&mut conn, "three_day_chat.json");
 
     // Явно просим "по месяцам" на чате, где он недоступен — не должно падать.
-    let detail = get_message_type_detail(&conn, chat.id, MessageTypeKind::Edited, Some(TypeTimeView::Month))
-        .unwrap()
-        .expect("fixture has exactly one edited message");
+    let detail = get_message_type_detail(
+        &conn,
+        chat.id,
+        MessageTypeKind::Edited,
+        Some(TypeTimeView::Month),
+    )
+    .unwrap()
+    .expect("fixture has exactly one edited message");
     assert_eq!(detail.selected_view, TypeTimeView::DayOfWeek);
 }
 
@@ -511,8 +559,16 @@ fn day_of_week_view_buckets_by_weekday_monday_first_not_by_calendar_date() {
         .into_iter()
         .map(|b| (b.bucket, b.count))
         .collect();
-    assert_eq!(by_bucket.get("0"), Some(&2), "both Mondays must collapse into weekday index 0");
-    assert_eq!(by_bucket.get("2"), Some(&1), "Wednesday must land on weekday index 2");
+    assert_eq!(
+        by_bucket.get("0"),
+        Some(&2),
+        "both Mondays must collapse into weekday index 0"
+    );
+    assert_eq!(
+        by_bucket.get("2"),
+        Some(&1),
+        "Wednesday must land on weekday index 2"
+    );
     assert_eq!(by_bucket.len(), 2, "only two distinct weekdays occurred");
 }
 
@@ -532,10 +588,8 @@ fn chat_imported_before_the_message_types_migration_reports_unavailable() {
         "../src/db/migrations/0002_chat_source_size.sql"
     ))
     .expect("apply migration 0002");
-    conn.execute_batch(include_str!(
-        "../src/db/migrations/0003_people_aliases.sql"
-    ))
-    .expect("apply migration 0003");
+    conn.execute_batch(include_str!("../src/db/migrations/0003_people_aliases.sql"))
+        .expect("apply migration 0003");
 
     conn.execute(
         "INSERT INTO chats (tg_chat_id, name, chat_type, imported_at, message_count, participant_count) \
@@ -545,10 +599,8 @@ fn chat_imported_before_the_message_types_migration_reports_unavailable() {
     .expect("insert pre-existing chat row");
     let chat_id = conn.last_insert_rowid();
 
-    conn.execute_batch(include_str!(
-        "../src/db/migrations/0004_message_types.sql"
-    ))
-    .expect("apply migration 0004 on top of the pre-existing chat");
+    conn.execute_batch(include_str!("../src/db/migrations/0004_message_types.sql"))
+        .expect("apply migration 0004 on top of the pre-existing chat");
 
     let overview = get_message_type_overview(&conn, chat_id).unwrap();
     assert!(
@@ -560,6 +612,185 @@ fn chat_imported_before_the_message_types_migration_reports_unavailable() {
         "still surfaces the chat's known message_count, just without a type breakdown"
     );
     assert!(overview.counts.is_empty());
+}
+
+#[test]
+fn precomputed_totals_and_activity_match_a_live_scan_of_messages() {
+    // Независимая сверка: числа из precomputed-таблиц (chats.word_count/
+    // char_count, activity_buckets, person_message_stats) не должны
+    // разъезжаться с тем, что даёт прямой SQL-скан messages — иначе
+    // оптимизация тихо портит данные, а не просто ускоряет их чтение.
+    for fixture_name in [
+        "three_day_chat.json",
+        "group_50_members.json",
+        "english_chat.json",
+    ] {
+        let mut conn = fresh_db();
+        let chat = import(&mut conn, fixture_name);
+
+        let (expected_words, expected_chars): (i64, i64) = conn
+            .query_row(
+                "SELECT COALESCE(SUM(word_count), 0), COALESCE(SUM(text_len), 0) \
+                 FROM messages WHERE chat_id = ?1",
+                [chat.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let totals = get_chat_totals(&conn, chat.id).unwrap().unwrap();
+        assert_eq!(
+            totals.word_count, expected_words,
+            "{fixture_name}: word_count mismatch"
+        );
+        assert_eq!(
+            totals.char_count, expected_chars,
+            "{fixture_name}: char_count mismatch"
+        );
+
+        let messages_with_ts: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE chat_id = ?1 AND ts IS NOT NULL",
+                [chat.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let activity = get_activity_series(&conn, chat.id).unwrap();
+        let bucketed_total: i64 =
+            activity.map_or(0, |series| series.buckets.iter().map(|b| b.count).sum());
+        assert_eq!(
+            bucketed_total, messages_with_ts,
+            "{fixture_name}: activity_buckets must cover every timestamped message exactly once"
+        );
+
+        let expected_participant_total: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE chat_id = ?1 AND person_id IS NOT NULL",
+                [chat.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let top = get_top_participants(&conn, chat.id).unwrap();
+        let participant_total: i64 = top.participants.iter().map(|p| p.message_count).sum();
+        assert_eq!(
+            participant_total, expected_participant_total,
+            "{fixture_name}: top participants must account for every attributed message"
+        );
+    }
+}
+
+#[test]
+fn dashboard_metrics_self_heal_for_a_chat_imported_before_the_precompute_migration() {
+    // Тот же приём, что и в chat_imported_before_the_message_types_migration_reports_unavailable:
+    // симулируем чат, чья строка chats никогда не проходила через
+    // import_into_db после появления precompute (миграция 0005 применяется
+    // на уже существующую строку, dashboard_ready остаётся 0 по умолчанию).
+    // В отличие от message_types_ready это НЕ новая метрика — сумма слов/
+    // символов/активность/топ участников уже работали, поэтому здесь не
+    // должно быть "недоступно": первое чтение обязано лениво досчитать.
+    let conn = Connection::open_in_memory().expect("open in-memory db");
+    conn.execute_batch(include_str!("../src/db/migrations/0001_init.sql"))
+        .expect("apply migration 0001");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0002_chat_source_size.sql"
+    ))
+    .expect("apply migration 0002");
+    conn.execute_batch(include_str!("../src/db/migrations/0003_people_aliases.sql"))
+        .expect("apply migration 0003");
+    conn.execute_batch(include_str!("../src/db/migrations/0004_message_types.sql"))
+        .expect("apply migration 0004");
+
+    conn.execute(
+        "INSERT INTO chats (tg_chat_id, name, chat_type, imported_at, first_msg_ts, last_msg_ts, \
+         message_count, participant_count, message_types_ready) \
+         VALUES (1, 'Old chat', 'private_group', 0, 1000, 2000, 2, 1, 1)",
+        [],
+    )
+    .expect("insert pre-existing chat row");
+    let chat_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO people (chat_id, tg_person_id, display_name) VALUES (?1, 'user1', 'Alice')",
+        [chat_id],
+    )
+    .expect("insert pre-existing person row");
+    let person_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO messages (chat_id, tg_msg_id, person_id, ts, text_len, word_count) \
+         VALUES (?1, 1, ?2, 1000, 5, 1), (?1, 2, ?2, 2000, 7, 2)",
+        params![chat_id, person_id],
+    )
+    .expect("insert pre-existing messages");
+
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0005_dashboard_precompute.sql"
+    ))
+    .expect("apply migration 0005 on top of the pre-existing chat");
+
+    let ready_before: i64 = conn
+        .query_row(
+            "SELECT dashboard_ready FROM chats WHERE id = ?1",
+            [chat_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        ready_before, 0,
+        "a pre-existing chat must start out not-yet-precomputed"
+    );
+
+    let totals = get_chat_totals(&conn, chat_id).unwrap().unwrap();
+    assert_eq!(
+        totals.word_count, 3,
+        "must self-heal instead of reporting a stale zero"
+    );
+    assert_eq!(totals.char_count, 12);
+
+    let activity = get_activity_series(&conn, chat_id)
+        .unwrap()
+        .expect("has timestamped messages");
+    let bucketed_total: i64 = activity.buckets.iter().map(|b| b.count).sum();
+    assert_eq!(bucketed_total, 2);
+
+    let top = get_top_participants(&conn, chat_id).unwrap();
+    assert_eq!(top.participants.len(), 1);
+    assert_eq!(top.participants[0].message_count, 2);
+
+    let ready_after: i64 = conn
+        .query_row(
+            "SELECT dashboard_ready FROM chats WHERE id = ?1",
+            [chat_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        ready_after, 1,
+        "self-heal must mark the chat ready so it isn't recomputed on every open"
+    );
+}
+
+#[test]
+fn merging_people_keeps_person_message_stats_consistent_not_just_the_live_view() {
+    // Не только get_top_participants (который и так проверяется в
+    // merging_people_moves_messages_and_drops_the_duplicate_row) — сама
+    // таблица person_message_stats не должна держать призрачную строку
+    // под объединённым person_id после merge_people (иначе следующий
+    // merge поверх неё уже не гарантированно корректен).
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "three_day_chat.json");
+    let people = people_ordered_by_name(&conn, chat.id);
+    let (primary, duplicate) = (&people[0], &people[1]);
+
+    db::merge_people(&conn, chat.id, primary.id, &[duplicate.id]).unwrap();
+
+    let stale_row_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM person_message_stats WHERE person_id = ?1",
+            [duplicate.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        stale_row_count, 0,
+        "the merged-away person_id must not linger in the precomputed table"
+    );
 }
 
 #[test]
@@ -575,13 +806,23 @@ fn message_type_metrics_never_panic_across_the_full_fixture_set() {
         let chat = import(&mut conn, fixture_name);
 
         let overview = get_message_type_overview(&conn, chat.id).unwrap();
-        assert!(overview.available, "{fixture_name}: freshly imported chats are always ready");
+        assert!(
+            overview.available,
+            "{fixture_name}: freshly imported chats are always ready"
+        );
 
         for kind in MessageTypeKind::ALL {
             let detail = get_message_type_detail(&conn, chat.id, kind, None).unwrap();
             if let Some(detail) = detail {
-                assert!(detail.total_count > 0, "{fixture_name}/{kind:?}: Some(..) implies a non-zero count");
-                for view in [TypeTimeView::Month, TypeTimeView::DayOfWeek, TypeTimeView::HourOfDay] {
+                assert!(
+                    detail.total_count > 0,
+                    "{fixture_name}/{kind:?}: Some(..) implies a non-zero count"
+                );
+                for view in [
+                    TypeTimeView::Month,
+                    TypeTimeView::DayOfWeek,
+                    TypeTimeView::HourOfDay,
+                ] {
                     // Явный запрос любого из трёх видов не должен падать,
                     // даже если он недоступен для этого чата (тихий фолбэк).
                     get_message_type_detail(&conn, chat.id, kind, Some(view)).unwrap();
