@@ -2,6 +2,7 @@ pub mod granularity;
 mod message_types;
 pub mod precompute;
 mod queries;
+mod reactions;
 
 pub use granularity::Granularity;
 pub use message_types::{
@@ -14,4 +15,9 @@ pub use precompute::{ensure_dashboard_ready, recompute_dashboard_metrics};
 pub use queries::{
     get_activity_series, get_chat_totals, get_top_participants, ActivityBucket, ActivitySeries,
     ChatTotals, ParticipantStat, TopParticipants,
+};
+pub use reactions::{
+    get_reactions_overview, get_top_reacted_messages, recompute_reaction_metrics,
+    recompute_reaction_person_stats, ReactionEmojiCount, ReactionPersonCount, ReactionsOverview,
+    ReactionsSummary, TopReactedMessage,
 };

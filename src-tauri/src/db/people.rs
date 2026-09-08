@@ -2,6 +2,7 @@ use rusqlite::{params, Connection};
 
 use crate::metrics::{
     ensure_dashboard_ready, recompute_dashboard_metrics, recompute_message_type_participant_stats,
+    recompute_reaction_person_stats,
 };
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -80,11 +81,14 @@ pub fn get_people(conn: &Connection, chat_id: i64) -> rusqlite::Result<Vec<Perso
 /// и так уникален глобально — конвенция CLAUDE.md «никаких запросов без
 /// фильтра по chat_id».
 ///
-/// Физически переносит `messages.person_id` на `primary_id` — из-за этого
-/// предвычисленные по сырому `person_id` `person_message_stats`
-/// (`metrics::precompute`) и `message_type_participant_stats`
-/// (`metrics::message_types`) перестают соответствовать `messages`,
-/// поэтому в конце пересчитываем обе целиком (дёшево: слияние — редкое,
+/// Физически переносит `messages.person_id` и `reaction_actors.person_id`
+/// на `primary_id` — из-за этого предвычисленные по сырому `person_id`
+/// `person_message_stats` (`metrics::precompute`),
+/// `message_type_participant_stats` (`metrics::message_types`) и
+/// `reaction_person_stats` (`metrics::reactions` — обе стороны:
+/// `reaction_actors.person_id` меняет "кто ставит", `messages.person_id`
+/// меняет "кому ставят") перестают соответствовать исходным таблицам,
+/// поэтому в конце пересчитываем все целиком (дёшево: слияние — редкое,
 /// явное действие пользователя из экрана «Участники», не часть пути
 /// открытия дашборда, который этот пересчёт как раз избавляет от полного
 /// скана).
@@ -104,6 +108,11 @@ pub fn merge_people(
             params![primary_id, other_id, chat_id],
         )?;
         conn.execute(
+            "UPDATE reaction_actors SET person_id = ?1 \
+             WHERE person_id = ?2 AND chat_id = ?3",
+            params![primary_id, other_id, chat_id],
+        )?;
+        conn.execute(
             "UPDATE OR IGNORE aliases SET person_id = ?1 \
              WHERE person_id = ?2 \
                AND EXISTS (SELECT 1 FROM people WHERE id = ?2 AND chat_id = ?3)",
@@ -116,6 +125,7 @@ pub fn merge_people(
     }
     recompute_dashboard_metrics(conn, chat_id)?;
     recompute_message_type_participant_stats(conn, chat_id)?;
+    recompute_reaction_person_stats(conn, chat_id)?;
     Ok(())
 }
 

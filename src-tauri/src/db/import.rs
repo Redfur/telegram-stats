@@ -21,6 +21,22 @@ fn db_err(e: rusqlite::Error) -> ImportError {
     ImportError::Sink(e.to_string())
 }
 
+/// Текст сообщения не хранится в `messages` (только `text_len`/`word_count`)
+/// — превью для "самых залайканных сообщений" снимается один раз здесь,
+/// пока текст ещё есть в памяти парсера, и обрезается: это витрина, не
+/// хранилище полного текста для каждого сообщения подряд.
+const REACTION_PREVIEW_MAX_CHARS: usize = 200;
+
+fn truncate_preview(text: &str) -> String {
+    if text.chars().count() <= REACTION_PREVIEW_MAX_CHARS {
+        text.to_string()
+    } else {
+        let mut s: String = text.chars().take(REACTION_PREVIEW_MAX_CHARS).collect();
+        s.push('…');
+        s
+    }
+}
+
 /// person_id → отображаемое имя → (первое, последнее) время встречи.
 type AliasSeen = HashMap<i64, HashMap<String, (Option<i64>, Option<i64>)>>;
 
@@ -151,6 +167,12 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
     let mut message_count: i64 = 0;
     let mut min_ts: Option<i64> = None;
     let mut max_ts: Option<i64> = None;
+    // `true`, если хотя бы одно сообщение несло поле `reactions` (даже
+    // пустое) — отличает "экспорт поддерживает реакции, тут их просто
+    // нет" от "экспорт сделан старой версией Telegram Desktop, поля нет
+    // вовсе" (docs/SPEC.md §7/§8.5). Второй случай не лечится повторным
+    // импортом этого же файла.
+    let mut saw_reactions_field = false;
 
     let meta = {
         let mut insert_msg = tx
@@ -159,6 +181,24 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                  media_type, has_photo, has_file, has_poll, has_location, has_contact, \
                  forwarded_from, edited_ts, duration_seconds) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            )
+            .map_err(db_err)?;
+        let mut insert_reaction = tx
+            .prepare(
+                "INSERT INTO message_reactions \
+                 (chat_id, message_id, kind, emoji, document_id, count, known_actor_count) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )
+            .map_err(db_err)?;
+        let mut insert_reaction_actor = tx
+            .prepare(
+                "INSERT INTO reaction_actors (chat_id, message_id, person_id) VALUES (?1, ?2, ?3)",
+            )
+            .map_err(db_err)?;
+        let mut insert_reaction_preview = tx
+            .prepare(
+                "INSERT INTO message_reaction_previews (chat_id, message_id, preview_text) \
+                 VALUES (?1, ?2, ?3)",
             )
             .map_err(db_err)?;
 
@@ -224,6 +264,52 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                     m.duration_seconds,
                 ])
                 .map_err(db_err)?;
+            let message_id = tx.last_insert_rowid();
+
+            if let Some(reactions) = m.reactions.as_ref() {
+                saw_reactions_field = true;
+                if !reactions.is_empty() {
+                    insert_reaction_preview
+                        .execute(params![
+                            chat_id,
+                            message_id,
+                            truncate_preview(&m.text.plain)
+                        ])
+                        .map_err(db_err)?;
+                    for r in reactions {
+                        insert_reaction
+                            .execute(params![
+                                chat_id,
+                                message_id,
+                                r.kind,
+                                r.emoji,
+                                r.document_id,
+                                r.count,
+                                r.recent.len() as i64,
+                            ])
+                            .map_err(db_err)?;
+                        for actor in &r.recent {
+                            let actor_person_id = if actor.who.id.is_empty() {
+                                None
+                            } else {
+                                Some(
+                                    resolve_person(
+                                        &tx,
+                                        &mut people_cache,
+                                        chat_id,
+                                        &actor.who.id,
+                                        actor.who.display_name.as_deref(),
+                                    )
+                                    .map_err(db_err)?,
+                                )
+                            };
+                            insert_reaction_actor
+                                .execute(params![chat_id, message_id, actor_person_id])
+                                .map_err(db_err)?;
+                        }
+                    }
+                }
+            }
 
             message_count += 1;
             if let Some(ts) = m.date_unixtime {
@@ -381,6 +467,27 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                 params![old_id, chat_id],
             )
             .map_err(db_err)?;
+            // message_reactions/reaction_actors/message_reaction_previews несут
+            // свой денормализованный chat_id (конвенция CLAUDE.md — никаких
+            // запросов без фильтра по chat_id) отдельно от messages.chat_id,
+            // который уже переехал строкой выше — без этого их подхватит
+            // ON DELETE CASCADE у следующего DELETE FROM chats (они всё ещё
+            // ссылались бы на временный chat_id).
+            tx.execute(
+                "UPDATE message_reactions SET chat_id = ?1 WHERE chat_id = ?2",
+                params![old_id, chat_id],
+            )
+            .map_err(db_err)?;
+            tx.execute(
+                "UPDATE reaction_actors SET chat_id = ?1 WHERE chat_id = ?2",
+                params![old_id, chat_id],
+            )
+            .map_err(db_err)?;
+            tx.execute(
+                "UPDATE message_reaction_previews SET chat_id = ?1 WHERE chat_id = ?2",
+                params![old_id, chat_id],
+            )
+            .map_err(db_err)?;
             tx.execute("DELETE FROM chats WHERE id = ?1", params![chat_id])
                 .map_err(db_err)?;
             chat_id = old_id;
@@ -390,8 +497,9 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
     let participant_count = people_cache.len() as i64;
     tx.execute(
         "UPDATE chats SET tg_chat_id=?1, name=?2, chat_type=?3, first_msg_ts=?4, last_msg_ts=?5, \
-         message_count=?6, participant_count=?7, source_file_size=?8, message_types_ready=1 \
-         WHERE id=?9",
+         message_count=?6, participant_count=?7, source_file_size=?8, message_types_ready=1, \
+         reactions_ready=1, reactions_supported=?9 \
+         WHERE id=?10",
         params![
             meta.tg_chat_id,
             meta.name,
@@ -401,6 +509,7 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
             message_count,
             participant_count,
             source_file_size,
+            saw_reactions_field,
             chat_id
         ],
     )
@@ -408,6 +517,7 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
 
     crate::metrics::recompute_dashboard_metrics(&tx, chat_id).map_err(db_err)?;
     crate::metrics::recompute_message_type_metrics(&tx, chat_id).map_err(db_err)?;
+    crate::metrics::recompute_reaction_metrics(&tx, chat_id).map_err(db_err)?;
 
     tx.commit().map_err(db_err)?;
 

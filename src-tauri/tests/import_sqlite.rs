@@ -7,7 +7,8 @@ use telegram_stats_lib::db::{self, import_into_db, ImportContext, ImportPhase, I
 use telegram_stats_lib::import::{parse_export, ImportError, ParsedEvent};
 use telegram_stats_lib::metrics::{
     get_activity_series, get_chat_totals, get_message_type_detail, get_message_type_overview,
-    get_top_participants, granularity::pick_granularity, MessageTypeKind, MessageTypeSummaryStats,
+    get_reactions_overview, get_top_participants, get_top_reacted_messages,
+    granularity::pick_granularity, MessageTypeKind, MessageTypeSummaryStats, ReactionsOverview,
     TypeTimeView,
 };
 
@@ -49,6 +50,8 @@ fn fresh_db() -> Connection {
         "../src/db/migrations/0007_person_activity_span.sql"
     ))
     .expect("apply migration 0007");
+    conn.execute_batch(include_str!("../src/db/migrations/0008_reactions.sql"))
+        .expect("apply migration 0008");
     conn
 }
 
@@ -1095,5 +1098,208 @@ fn message_type_metrics_never_panic_across_the_full_fixture_set() {
                 }
             }
         }
+    }
+}
+
+// group_50_members.json несёт 23 сообщения с реакциями: 22 с одним 👍
+// (count=2, recent=[Аня,Боря]) и одно (id=28, от Маши) с 👍 намеренно
+// count=5 при recent той же длины 2 — синтетический edge case §8.5
+// (Telegram отдаёт в recent не полный список реагировавших), плюс 5 из
+// 23 сообщений несут ещё custom_emoji (count=1, recent=[Вера]).
+// Ожидаемые суммы посчитаны независимо в комментарии ниже и продублированы
+// python-скриптом при подготовке фикстуры — не хардкод наугад:
+// total_reactions = 22*2 + 5 (edge case) + 23*1(своих custom_emoji? нет — 5*1) = 54
+// 👍 sum = 22*2 + 5 = 49, custom_emoji sum = 5*1 = 5.
+#[test]
+fn reactions_overview_reports_aggregates_top_emoji_and_incomplete_given_flag() {
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "group_50_members.json");
+
+    let overview = get_reactions_overview(&conn, chat.id).unwrap();
+    let ReactionsOverview::Available(summary) = overview else {
+        panic!("a freshly imported chat with reactions must report Available");
+    };
+
+    assert_eq!(summary.total_reactions, 54);
+    assert_eq!(summary.reacted_message_count, 23);
+    assert!(
+        summary.given_data_incomplete,
+        "message 28's 👍 has count=5 but only 2 known actors in `recent`"
+    );
+
+    let thumbs_up = summary
+        .top_emoji
+        .iter()
+        .find(|e| e.emoji.as_deref() == Some("👍"))
+        .expect("thumbs up must be present");
+    assert_eq!(thumbs_up.count, 49);
+    let custom = summary
+        .top_emoji
+        .iter()
+        .find(|e| e.kind == "custom_emoji")
+        .expect("custom_emoji must be present");
+    assert_eq!(custom.count, 5);
+    assert_eq!(custom.emoji, None, "custom_emoji has no plain emoji glyph");
+
+    // Кто ставит: Аня/Боря реагировали на все 23 сообщения, Вера — на 5.
+    let ana = summary
+        .given
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Аня"))
+        .expect("Аня must appear in `given`");
+    assert_eq!(ana.count, 23);
+    let borya = summary
+        .given
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Боря"))
+        .expect("Боря must appear in `given`");
+    assert_eq!(borya.count, 23);
+
+    // Кому ставят: точное число, не зависит от неполноты `recent` — у
+    // Маши оно должно отразить count=5 (не len(recent)=2) на её сообщении.
+    let masha = summary
+        .received
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Маша"))
+        .expect("Маша must appear in `received`");
+    assert_eq!(masha.count, 6, "5 (👍, edge case) + 1 (custom_emoji)");
+}
+
+#[test]
+fn reactions_overview_reports_not_in_export_for_old_export_fixture() {
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "no_reactions_old_export.json");
+
+    let overview = get_reactions_overview(&conn, chat.id).unwrap();
+    assert!(
+        matches!(overview, ReactionsOverview::NotInExport),
+        "an export with no `reactions` field on any message must not report zeros as if measured"
+    );
+}
+
+#[test]
+fn reactions_overview_reports_needs_reimport_for_a_chat_imported_before_the_reactions_migration() {
+    // Тот же приём, что и chat_imported_before_the_message_types_migration_
+    // reports_unavailable, но для реакций: в отличие от message_types это
+    // не self-heal-пересчёт — сырых message_reactions/reaction_actors для
+    // такого чата попросту нет и никогда не появится без повторного
+    // импорта исходного файла.
+    let conn = Connection::open_in_memory().expect("open in-memory db");
+    conn.execute_batch(include_str!("../src/db/migrations/0001_init.sql"))
+        .expect("apply migration 0001");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0002_chat_source_size.sql"
+    ))
+    .expect("apply migration 0002");
+    conn.execute_batch(include_str!("../src/db/migrations/0003_people_aliases.sql"))
+        .expect("apply migration 0003");
+    conn.execute_batch(include_str!("../src/db/migrations/0004_message_types.sql"))
+        .expect("apply migration 0004");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0005_dashboard_precompute.sql"
+    ))
+    .expect("apply migration 0005");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0006_message_type_precompute.sql"
+    ))
+    .expect("apply migration 0006");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0007_person_activity_span.sql"
+    ))
+    .expect("apply migration 0007");
+
+    conn.execute(
+        "INSERT INTO chats (tg_chat_id, name, chat_type, imported_at, message_count, participant_count) \
+         VALUES (1, 'Old chat', 'private_group', 0, 5, 2)",
+        [],
+    )
+    .expect("insert pre-existing chat row");
+    let chat_id = conn.last_insert_rowid();
+
+    conn.execute_batch(include_str!("../src/db/migrations/0008_reactions.sql"))
+        .expect("apply migration 0008 on top of the pre-existing chat");
+
+    let overview = get_reactions_overview(&conn, chat_id).unwrap();
+    assert!(
+        matches!(overview, ReactionsOverview::NeedsReimport),
+        "a chat that never went through the updated importer must ask for a re-import, not show zeros"
+    );
+}
+
+#[test]
+fn get_top_reacted_messages_ranks_by_total_count_and_carries_preview_text() {
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "group_50_members.json");
+
+    let top = get_top_reacted_messages(&conn, chat.id).unwrap();
+    assert_eq!(
+        top.len(),
+        10,
+        "limited to the top 10 of 23 reacted messages"
+    );
+    assert!(
+        top.windows(2).all(|w| w[0].total_count >= w[1].total_count),
+        "must be sorted by total reaction count, descending"
+    );
+
+    let leader = &top[0];
+    assert_eq!(leader.total_count, 6);
+    assert_eq!(leader.display_name.as_deref(), Some("Маша"));
+    assert_eq!(
+        leader.preview_text.as_deref(),
+        Some("привет всем, я Маша"),
+        "preview must be captured at import time, since `messages` itself does not store text"
+    );
+}
+
+#[test]
+fn merging_people_recombines_given_reaction_counts_not_just_received() {
+    // Отдельно от merging_people_keeps_person_message_stats_consistent_
+    // not_just_the_live_view: там проверяется messages.person_id (влияет
+    // на "кому ставят"), здесь — reaction_actors.person_id ("кто
+    // ставит"), которую тот тест не касается вовсе.
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "group_50_members.json");
+    let people = people_ordered_by_name(&conn, chat.id);
+    let ana = people
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Аня"))
+        .unwrap();
+    let borya = people
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Боря"))
+        .unwrap();
+
+    db::merge_people(&conn, chat.id, ana.id, &[borya.id]).unwrap();
+
+    let ReactionsOverview::Available(summary) = get_reactions_overview(&conn, chat.id).unwrap()
+    else {
+        panic!("chat must still report Available after a merge");
+    };
+    let merged = summary
+        .given
+        .iter()
+        .find(|p| p.person_id == ana.id)
+        .expect("the surviving person must carry the combined given count");
+    assert_eq!(merged.count, 46, "23 (Аня) + 23 (Боря)");
+    assert!(
+        summary.given.iter().all(|p| p.person_id != borya.id),
+        "the merged-away person must not linger in `given`"
+    );
+}
+
+#[test]
+fn reaction_metrics_never_panic_across_the_full_fixture_set() {
+    for fixture_name in [
+        "three_day_chat.json",
+        "group_50_members.json",
+        "no_reactions_old_export.json",
+        "personal_chat.json",
+        "english_chat.json",
+    ] {
+        let mut conn = fresh_db();
+        let chat = import(&mut conn, fixture_name);
+        get_reactions_overview(&conn, chat.id).unwrap();
+        get_top_reacted_messages(&conn, chat.id).unwrap();
     }
 }
