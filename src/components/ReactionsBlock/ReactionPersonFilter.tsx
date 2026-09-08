@@ -17,6 +17,11 @@ interface DivergingRow {
   get: number;
 }
 
+// Разбивка может быть длинной (десятки разных эмодзи, часть — с одним
+// использованием) — по умолчанию видно топ-10, остальное под «показать
+// ещё», тот же приём, что и у сетки эмодзи в сводке.
+const VISIBLE_DIVERGING_COUNT = 10;
+
 function mergeBreakdown(given: ReactionEmojiCount[], received: ReactionEmojiCount[]): DivergingRow[] {
   const key = (e: ReactionEmojiCount) => `${e.kind}|${e.emoji ?? ""}|${e.document_id ?? ""}`;
   const rows = new Map<string, DivergingRow>();
@@ -55,7 +60,16 @@ export function ReactionPersonFilter({ chatId, people, onReimport }: ReactionPer
   const [search, setSearch] = useState("");
   const [personId, setPersonId] = useState<number | null>(null);
   const [breakdown, setBreakdown] = useState<PersonReactionBreakdown | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  function reset() {
+    setPersonId(null);
+    setBreakdown(null);
+    setExpanded(false);
+    setOpen(false);
+    setSearch("");
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -75,6 +89,7 @@ export function ReactionPersonFilter({ chatId, people, onReimport }: ReactionPer
     }
     let cancelled = false;
     setBreakdown(null);
+    setExpanded(false);
     invoke<PersonReactionBreakdown>("get_reaction_person_breakdown", { chatId, personId }).then((r) => {
       if (!cancelled) setBreakdown(r);
     });
@@ -89,7 +104,8 @@ export function ReactionPersonFilter({ chatId, people, onReimport }: ReactionPer
   );
   const selected = people.find((p) => p.id === personId) ?? null;
 
-  const diverging = breakdown ? mergeBreakdown(breakdown.given, breakdown.received) : [];
+  const allDiverging = breakdown ? mergeBreakdown(breakdown.given, breakdown.received) : [];
+  const diverging = expanded ? allDiverging : allDiverging.slice(0, VISIBLE_DIVERGING_COUNT);
   const maxGive = Math.max(1, ...diverging.map((r) => r.give));
   const maxGet = Math.max(1, ...diverging.map((r) => r.get));
 
@@ -108,6 +124,17 @@ export function ReactionPersonFilter({ chatId, people, onReimport }: ReactionPer
             </span>
             <span className={styles.personPickerCaret}>{open ? "▲" : "▼"}</span>
           </button>
+          {selected && (
+            <button
+              type="button"
+              className={styles.personPickerClear}
+              onClick={reset}
+              title="Сбросить фильтр"
+              aria-label="Сбросить фильтр"
+            >
+              ✕
+            </button>
+          )}
           {open && (
             <Command className={styles.personPickerPanel} shouldFilter={false} label="Поиск участника">
               <Command.Input
@@ -200,6 +227,13 @@ export function ReactionPersonFilter({ chatId, people, onReimport }: ReactionPer
               </div>
             </div>
           ))}
+          {allDiverging.length > VISIBLE_DIVERGING_COUNT && (
+            <button type="button" className={styles.showAll} onClick={() => setExpanded((v) => !v)}>
+              {expanded
+                ? "свернуть"
+                : `показать все (ещё ${allDiverging.length - VISIBLE_DIVERGING_COUNT}) ▾`}
+            </button>
+          )}
         </div>
       )}
     </div>

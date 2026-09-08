@@ -188,6 +188,8 @@ export interface TopReactedMessage {
   /** Тип сообщения ("Фото", "Голосовое сообщение", …) — задан вне зависимости
    *  от preview_text, когда есть распознанный медиа-тип. */
   content_label: string | null;
+  /** Разбивка по типам реакций на сообщении, по убыванию count. */
+  reactions: ReactionEmojiCount[];
   total_count: number;
 }
 

@@ -37,8 +37,12 @@ export function ReactionEmojiList({
   const top4Count = top4.reduce((sum, e) => sum + e.count, 0);
   const top4Pct = totalReactions > 0 ? (top4Count / totalReactions) * 100 : 0;
 
-  const visible = expanded ? topEmoji : topEmoji.slice(0, VISIBLE_COUNT);
-  const tail = expanded ? [] : topEmoji.slice(VISIBLE_COUNT);
+  // Первые VISIBLE_COUNT всегда в подробном виде (грид с процентом и
+  // полосой); хвост по умолчанию не рендерится вовсе — «показать все»
+  // именно раскрывает его компактными чипами, а не превращает в
+  // подробные карточки.
+  const visible = topEmoji.slice(0, VISIBLE_COUNT);
+  const tail = expanded ? topEmoji.slice(VISIBLE_COUNT) : [];
   const maxCount = Math.max(1, ...visible.map((e) => e.count));
 
   return (

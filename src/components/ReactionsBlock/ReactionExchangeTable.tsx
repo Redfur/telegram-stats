@@ -36,17 +36,23 @@ export function ReactionExchangeTable({ rows }: ReactionExchangeTableProps) {
     },
     {
       id: "balance",
-      header: "Баланс",
+      header: () => (
+        <span className={styles.balanceHeader}>
+          Баланс
+          <span className={styles.caveat}>влево — ставит больше, чем получает</span>
+        </span>
+      ),
       cell: (info) => {
         const row = info.row.original;
         const total = row.given_count + row.received_count;
         if (total === 0) return null;
         const giveShare = row.given_count / total;
-        // Полоса растёт от центра (50%) в сторону перевеса — влево, если
-        // ставит больше, чем получает, вправо — если наоборот.
-        const left = giveShare <= 0.5 ? giveShare * 100 : 50;
-        const width = Math.abs(giveShare - 0.5) * 100;
+        const distance = Math.abs(giveShare - 0.5) * 100;
         const towardsGive = giveShare > 0.5;
+        // Полоса растёт от центра (50%) в сторону перевеса — влево, если
+        // ставит больше, чем получает (towardsGive — полоса кончается на
+        // отметке 50%, а не начинается от неё), вправо — если наоборот.
+        const left = towardsGive ? 50 - distance : 50;
         return (
           <div className={styles.balanceTrack}>
             <div className={styles.balanceAxis} />
@@ -54,7 +60,7 @@ export function ReactionExchangeTable({ rows }: ReactionExchangeTableProps) {
               className={[styles.balanceFill, towardsGive ? styles.balanceGive : styles.balanceGet].join(
                 " ",
               )}
-              style={{ left: `${left}%`, width: `${width}%` }}
+              style={{ left: `${left}%`, width: `${distance}%` }}
             />
           </div>
         );
