@@ -5,6 +5,7 @@ import { StatTile } from "../../components/StatTile/StatTile";
 import { ActivityChart } from "../../components/ActivityChart/ActivityChart";
 import { ParticipantsTable } from "../../components/ParticipantsTable/ParticipantsTable";
 import { MessageTypesBlock } from "../../components/MessageTypesBlock/MessageTypesBlock";
+import { ReactionsBlock } from "../../components/ReactionsBlock/ReactionsBlock";
 import type { ActivitySeries, ChatTotals, TopParticipants } from "../../lib/types";
 import styles from "./Dashboard.module.css";
 
@@ -20,7 +21,8 @@ interface DashboardProps {
 const SWITCH_DEBOUNCE_MS = 150;
 
 // Разделы 00/01/02/03 макета «Дашборд» (вариант 2a: 00 сводка, 01
-// активность, 02 кто писал) + ход t6 (03 типы сообщений) — остальные
+// активность, 02 кто писал) + ход t6 (03 типы сообщений) + 04 реакции
+// (docs/SPEC.md §9 «Социальная динамика», первый срез) — остальные
 // секции макета (хронология слов, рекорды) — следующий инкремент
 // (docs/PLAN.md).
 export function Dashboard({ chatId, onReimport }: DashboardProps) {
@@ -133,6 +135,14 @@ export function Dashboard({ chatId, onReimport }: DashboardProps) {
           <span className="sec">ТИПЫ СООБЩЕНИЙ</span>
         </div>
         <MessageTypesBlock chatId={chatId} onReimport={onReimport} />
+      </section>
+
+      <section>
+        <div className={styles.sectionHead}>
+          <span className="kick">04</span>
+          <span className="sec">РЕАКЦИИ</span>
+        </div>
+        <ReactionsBlock chatId={chatId} onReimport={onReimport} />
       </section>
     </div>
   );

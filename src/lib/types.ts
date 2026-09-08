@@ -134,6 +134,48 @@ export interface MessageTypeDetail {
   participants: MessageTypeParticipantStat[];
 }
 
+// Зеркалит src-tauri/src/metrics/reactions.rs.
+export interface ReactionEmojiCount {
+  kind: string;
+  emoji: string | null;
+  document_id: string | null;
+  count: number;
+}
+
+export interface ReactionPersonCount {
+  person_id: number;
+  display_name: string | null;
+  count: number;
+}
+
+export interface ReactionsSummary {
+  total_reactions: number;
+  reacted_message_count: number;
+  total_messages: number;
+  top_emoji: ReactionEmojiCount[];
+  given: ReactionPersonCount[];
+  /** Точное число — считается по авторитетному `count`, не по `recent`. */
+  received: ReactionPersonCount[];
+  /** `true` — `given` занижен: `recent` в экспорте несёт не всех реагировавших. */
+  given_data_incomplete: boolean;
+}
+
+// Rust-enum с internally-tagged `status` (serde `tag = "status"`) — поля
+// `Available` флеттятся в тот же объект, не вложены в отдельный ключ.
+export type ReactionsOverview =
+  | { status: "needs_reimport" }
+  | { status: "not_in_export" }
+  | ({ status: "available" } & ReactionsSummary);
+
+export interface TopReactedMessage {
+  message_id: number;
+  person_id: number | null;
+  display_name: string | null;
+  ts: number | null;
+  preview_text: string | null;
+  total_count: number;
+}
+
 export interface PersonRow {
   id: number;
   display_name: string | null;
