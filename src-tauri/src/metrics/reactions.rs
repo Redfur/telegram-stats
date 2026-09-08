@@ -161,7 +161,52 @@ pub struct TopReactedMessage {
     pub display_name: Option<String>,
     pub ts: Option<i64>,
     pub preview_text: Option<String>,
+    /// Человекочитаемое описание типа сообщения ("Фото", "Голосовое", …) —
+    /// заполнено, когда есть распознанный медиа-тип, вне зависимости от
+    /// `preview_text` (у фото с подписью оба поля непустые, фронт сам
+    /// решает, что показать). `None` для чистого текста без медиа.
+    pub content_label: Option<String>,
     pub total_count: i64,
+}
+
+/// Метки те же 13 типов, что и в `message_types.rs` (`MessageTypeKind`),
+/// но здесь — не SQL-предикат, а разбор уже прочитанных из БД колонок
+/// одного сообщения в подпись для карточки. Дублирует часть логики
+/// `MessageTypeKind::predicate_sql` в другой форме (row → label, не
+/// kind → SQL) — не переиспользует её напрямую, чтобы не тащить
+/// зависимость message_types.rs → reactions.rs ради одной строчки.
+fn media_content_label(
+    media_type: Option<&str>,
+    has_photo: bool,
+    has_file: bool,
+    has_poll: bool,
+    has_location: bool,
+    has_contact: bool,
+) -> Option<&'static str> {
+    if has_photo {
+        return Some("Фото");
+    }
+    match media_type {
+        Some("sticker") => return Some("Стикер"),
+        Some("voice_message") => return Some("Голосовое сообщение"),
+        Some("video_message") => return Some("Видеосообщение"),
+        Some("video_file") => return Some("Видео"),
+        Some("animation") => return Some("Гифка"),
+        _ => {}
+    }
+    if has_file {
+        return Some("Файл");
+    }
+    if has_poll {
+        return Some("Опрос");
+    }
+    if has_location {
+        return Some("Локация");
+    }
+    if has_contact {
+        return Some("Контакт");
+    }
+    None
 }
 
 /// Топ-10 самых залайканных сообщений — простой indexed-запрос к
@@ -186,7 +231,8 @@ pub fn get_top_reacted_messages(
     }
 
     let mut stmt = conn.prepare(
-        "SELECT mr.message_id, m.person_id, p.display_name, m.ts, mrp.preview_text, SUM(mr.count) \
+        "SELECT mr.message_id, m.person_id, p.display_name, m.ts, mrp.preview_text, SUM(mr.count), \
+                m.media_type, m.has_photo, m.has_file, m.has_poll, m.has_location, m.has_contact \
          FROM message_reactions mr \
          JOIN messages m ON m.id = mr.message_id \
          LEFT JOIN people p ON p.id = m.person_id \
@@ -198,16 +244,113 @@ pub fn get_top_reacted_messages(
          LIMIT ?2",
     )?;
     let rows = stmt.query_map(params![chat_id, TOP_REACTED_MESSAGES_LIMIT], |row| {
+        let media_type: Option<String> = row.get(6)?;
+        let content_label = media_content_label(
+            media_type.as_deref(),
+            row.get::<_, i64>(7)? != 0,
+            row.get::<_, i64>(8)? != 0,
+            row.get::<_, i64>(9)? != 0,
+            row.get::<_, i64>(10)? != 0,
+            row.get::<_, i64>(11)? != 0,
+        )
+        .map(str::to_string);
         Ok(TopReactedMessage {
             message_id: row.get(0)?,
             person_id: row.get(1)?,
             display_name: row.get(2)?,
             ts: row.get(3)?,
             preview_text: row.get(4)?,
+            content_label,
             total_count: row.get(5)?,
         })
     })?;
     rows.collect()
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PersonReactionBreakdown {
+    pub given: Vec<ReactionEmojiCount>,
+    /// Из `reaction_person_stats.given_count` — сумма `given` совпадает с
+    /// этим числом только для чата, целиком переимпортированного после
+    /// миграции `0009`. Если `given_total > 0`, а `given` пуст — часть
+    /// или все реакции этого участника были посчитаны до появления
+    /// разбивки по эмодзи, и фронт должен предложить переимпорт, а не
+    /// молча показать пустой список.
+    pub given_total: i64,
+    pub received: Vec<ReactionEmojiCount>,
+    pub received_total: i64,
+}
+
+/// Разбивка по типам реакций для одного участника: какие эмодзи он сам
+/// ставит (`given`, из `reaction_actors.kind/emoji/document_id` — миграция
+/// `0009`) и какие эмодзи собирают его сообщения (`received`, из
+/// `message_reactions`, точно, тем же приёмом, что и в
+/// `get_reactions_overview`). Живой запрос, не precompute — обе исходные
+/// таблицы уже ограничены только реакциями, а не всеми `messages`, и
+/// фильтр по `person_id` использует `idx_reaction_actors_person_kind`/
+/// `idx_reaction_actors_person`.
+///
+/// `given` не включает строки `reaction_actors`, вставленные до миграции
+/// `0009` (`kind IS NULL`) — у них нет типа реакции и агрегировать их с
+/// типизированными в одну "неизвестную" категорию значило бы смешивать
+/// разнородные эмодзи под одной строкой. Пустой `given` при ненулевом
+/// `reaction_person_stats.given_count` означает именно это — чат нужно
+/// переимпортировать, чтобы увидеть разбивку (общий счётчик при этом уже
+/// корректен и без переимпорта).
+pub fn get_reaction_person_breakdown(
+    conn: &Connection,
+    chat_id: i64,
+    person_id: i64,
+) -> rusqlite::Result<PersonReactionBreakdown> {
+    let mut given_stmt = conn.prepare(
+        "SELECT kind, emoji, document_id, COUNT(*) FROM reaction_actors \
+         WHERE chat_id = ?1 AND person_id = ?2 AND kind IS NOT NULL \
+         GROUP BY kind, emoji, document_id ORDER BY COUNT(*) DESC",
+    )?;
+    let given = given_stmt
+        .query_map(params![chat_id, person_id], |row| {
+            Ok(ReactionEmojiCount {
+                kind: row.get(0)?,
+                emoji: row.get(1)?,
+                document_id: row.get(2)?,
+                count: row.get(3)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut received_stmt = conn.prepare(
+        "SELECT mr.kind, mr.emoji, mr.document_id, SUM(mr.count) FROM message_reactions mr \
+         JOIN messages m ON m.id = mr.message_id \
+         WHERE mr.chat_id = ?1 AND m.person_id = ?2 \
+         GROUP BY mr.kind, mr.emoji, mr.document_id ORDER BY SUM(mr.count) DESC",
+    )?;
+    let received = received_stmt
+        .query_map(params![chat_id, person_id], |row| {
+            Ok(ReactionEmojiCount {
+                kind: row.get(0)?,
+                emoji: row.get(1)?,
+                document_id: row.get(2)?,
+                count: row.get(3)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let (given_total, received_total): (i64, i64) = conn
+        .query_row(
+            "SELECT given_count, received_count FROM reaction_person_stats \
+             WHERE chat_id = ?1 AND person_id = ?2",
+            params![chat_id, person_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .unwrap_or((0, 0));
+
+    Ok(PersonReactionBreakdown {
+        given,
+        given_total,
+        received,
+        received_total,
+    })
 }
 
 /// Пересчитывает `reaction_emoji_stats`/`reaction_person_stats` и

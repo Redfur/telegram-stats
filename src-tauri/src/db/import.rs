@@ -192,7 +192,9 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
             .map_err(db_err)?;
         let mut insert_reaction_actor = tx
             .prepare(
-                "INSERT INTO reaction_actors (chat_id, message_id, person_id) VALUES (?1, ?2, ?3)",
+                "INSERT INTO reaction_actors \
+                 (chat_id, message_id, person_id, kind, emoji, document_id) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )
             .map_err(db_err)?;
         let mut insert_reaction_preview = tx
@@ -304,7 +306,14 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                                 )
                             };
                             insert_reaction_actor
-                                .execute(params![chat_id, message_id, actor_person_id])
+                                .execute(params![
+                                    chat_id,
+                                    message_id,
+                                    actor_person_id,
+                                    r.kind,
+                                    r.emoji,
+                                    r.document_id,
+                                ])
                                 .map_err(db_err)?;
                         }
                     }

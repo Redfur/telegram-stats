@@ -17,7 +17,8 @@ pub use queries::{
     ChatTotals, ParticipantStat, TopParticipants,
 };
 pub use reactions::{
-    get_reactions_overview, get_top_reacted_messages, recompute_reaction_metrics,
-    recompute_reaction_person_stats, ReactionEmojiCount, ReactionPersonCount, ReactionsOverview,
-    ReactionsSummary, TopReactedMessage,
+    get_reaction_person_breakdown, get_reactions_overview, get_top_reacted_messages,
+    recompute_reaction_metrics, recompute_reaction_person_stats, PersonReactionBreakdown,
+    ReactionEmojiCount, ReactionPersonCount, ReactionsOverview, ReactionsSummary,
+    TopReactedMessage,
 };

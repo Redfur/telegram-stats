@@ -7,9 +7,9 @@ use telegram_stats_lib::db::{self, import_into_db, ImportContext, ImportPhase, I
 use telegram_stats_lib::import::{parse_export, ImportError, ParsedEvent};
 use telegram_stats_lib::metrics::{
     get_activity_series, get_chat_totals, get_message_type_detail, get_message_type_overview,
-    get_reactions_overview, get_top_participants, get_top_reacted_messages,
-    granularity::pick_granularity, MessageTypeKind, MessageTypeSummaryStats, ReactionsOverview,
-    TypeTimeView,
+    get_reaction_person_breakdown, get_reactions_overview, get_top_participants,
+    get_top_reacted_messages, granularity::pick_granularity, MessageTypeKind,
+    MessageTypeSummaryStats, ReactionsOverview, TypeTimeView,
 };
 
 fn people_ordered_by_name(conn: &Connection, chat_id: i64) -> Vec<db::PersonRow> {
@@ -52,6 +52,10 @@ fn fresh_db() -> Connection {
     .expect("apply migration 0007");
     conn.execute_batch(include_str!("../src/db/migrations/0008_reactions.sql"))
         .expect("apply migration 0008");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0009_reaction_actor_emoji.sql"
+    ))
+    .expect("apply migration 0009");
     conn
 }
 
@@ -1101,15 +1105,15 @@ fn message_type_metrics_never_panic_across_the_full_fixture_set() {
     }
 }
 
-// group_50_members.json несёт 23 сообщения с реакциями: 22 с одним 👍
+// group_50_members.json несёт 24 сообщения с реакциями: 22 с одним 👍
 // (count=2, recent=[Аня,Боря]) и одно (id=28, от Маши) с 👍 намеренно
 // count=5 при recent той же длины 2 — синтетический edge case §8.5
 // (Telegram отдаёт в recent не полный список реагировавших), плюс 5 из
-// 23 сообщений несут ещё custom_emoji (count=1, recent=[Вера]).
-// Ожидаемые суммы посчитаны независимо в комментарии ниже и продублированы
-// python-скриптом при подготовке фикстуры — не хардкод наугад:
-// total_reactions = 22*2 + 5 (edge case) + 23*1(своих custom_emoji? нет — 5*1) = 54
-// 👍 sum = 22*2 + 5 = 49, custom_emoji sum = 5*1 = 5.
+// них несут ещё custom_emoji (count=1, recent=[Вера]), плюс одно (id=59,
+// от Ани, чистое фото без подписи) с 🔥 count=4/recent=[Боря] — второй
+// edge case неполноты и одновременно фикстура для media-label ниже.
+// Ожидаемые суммы посчитаны python-скриптом при подготовке фикстуры, не
+// хардкод наугад: total_reactions = 22*2+5(edge case)+5*1(custom)+4(🔥) = 58.
 #[test]
 fn reactions_overview_reports_aggregates_top_emoji_and_incomplete_given_flag() {
     let mut conn = fresh_db();
@@ -1120,8 +1124,8 @@ fn reactions_overview_reports_aggregates_top_emoji_and_incomplete_given_flag() {
         panic!("a freshly imported chat with reactions must report Available");
     };
 
-    assert_eq!(summary.total_reactions, 54);
-    assert_eq!(summary.reacted_message_count, 23);
+    assert_eq!(summary.total_reactions, 58);
+    assert_eq!(summary.reacted_message_count, 24);
     assert!(
         summary.given_data_incomplete,
         "message 28's 👍 has count=5 but only 2 known actors in `recent`"
@@ -1140,8 +1144,15 @@ fn reactions_overview_reports_aggregates_top_emoji_and_incomplete_given_flag() {
         .expect("custom_emoji must be present");
     assert_eq!(custom.count, 5);
     assert_eq!(custom.emoji, None, "custom_emoji has no plain emoji glyph");
+    let fire = summary
+        .top_emoji
+        .iter()
+        .find(|e| e.emoji.as_deref() == Some("🔥"))
+        .expect("fire must be present");
+    assert_eq!(fire.count, 4);
 
-    // Кто ставит: Аня/Боря реагировали на все 23 сообщения, Вера — на 5.
+    // Кто ставит: Аня — на все 23 текстовых сообщения, Боря — на те же 23
+    // плюс на фото Ани (24), Вера — на 5.
     let ana = summary
         .given
         .iter()
@@ -1153,7 +1164,7 @@ fn reactions_overview_reports_aggregates_top_emoji_and_incomplete_given_flag() {
         .iter()
         .find(|p| p.display_name.as_deref() == Some("Боря"))
         .expect("Боря must appear in `given`");
-    assert_eq!(borya.count, 23);
+    assert_eq!(borya.count, 24);
 
     // Кому ставят: точное число, не зависит от неполноты `recent` — у
     // Маши оно должно отразить count=5 (не len(recent)=2) на её сообщении.
@@ -1235,7 +1246,7 @@ fn get_top_reacted_messages_ranks_by_total_count_and_carries_preview_text() {
     assert_eq!(
         top.len(),
         10,
-        "limited to the top 10 of 23 reacted messages"
+        "limited to the top 10 of 24 reacted messages"
     );
     assert!(
         top.windows(2).all(|w| w[0].total_count >= w[1].total_count),
@@ -1249,6 +1260,26 @@ fn get_top_reacted_messages_ranks_by_total_count_and_carries_preview_text() {
         leader.preview_text.as_deref(),
         Some("привет всем, я Маша"),
         "preview must be captured at import time, since `messages` itself does not store text"
+    );
+    assert_eq!(
+        leader.content_label, None,
+        "a plain text message has no media kind"
+    );
+
+    // Ани фото без подписи (id 59, 🔥 count=4) — единственное сообщение с
+    // count=4, второе по счёту после Маши.
+    let photo_entry = &top[1];
+    assert_eq!(photo_entry.total_count, 4);
+    assert_eq!(photo_entry.display_name.as_deref(), Some("Аня"));
+    assert_eq!(
+        photo_entry.preview_text.as_deref(),
+        Some(""),
+        "an empty caption still gets a (empty) preview row, not NULL"
+    );
+    assert_eq!(
+        photo_entry.content_label.as_deref(),
+        Some("Фото"),
+        "a textless message must surface what kind of content it was, not just an em dash"
     );
 }
 
@@ -1281,7 +1312,7 @@ fn merging_people_recombines_given_reaction_counts_not_just_received() {
         .iter()
         .find(|p| p.person_id == ana.id)
         .expect("the surviving person must carry the combined given count");
-    assert_eq!(merged.count, 46, "23 (Аня) + 23 (Боря)");
+    assert_eq!(merged.count, 47, "23 (Аня) + 24 (Боря)");
     assert!(
         summary.given.iter().all(|p| p.person_id != borya.id),
         "the merged-away person must not linger in `given`"
@@ -1302,4 +1333,88 @@ fn reaction_metrics_never_panic_across_the_full_fixture_set() {
         get_reactions_overview(&conn, chat.id).unwrap();
         get_top_reacted_messages(&conn, chat.id).unwrap();
     }
+}
+
+#[test]
+fn get_reaction_person_breakdown_groups_by_emoji_type() {
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "group_50_members.json");
+    let people = people_ordered_by_name(&conn, chat.id);
+
+    // Боря — единственный, кто ставит оба типа реакций (👍 на все 23
+    // текстовых сообщения, 🔥 на фото Ани) — должен получить две
+    // отдельные строки, не слитые в одну "неизвестную" категорию.
+    let borya = people
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Боря"))
+        .unwrap();
+    let borya_breakdown = get_reaction_person_breakdown(&conn, chat.id, borya.id).unwrap();
+    assert_eq!(borya_breakdown.given_total, 24);
+    let thumbs_up = borya_breakdown
+        .given
+        .iter()
+        .find(|e| e.emoji.as_deref() == Some("👍"))
+        .expect("👍 must appear in Борин given breakdown");
+    assert_eq!(thumbs_up.count, 23);
+    let fire = borya_breakdown
+        .given
+        .iter()
+        .find(|e| e.emoji.as_deref() == Some("🔥"))
+        .expect("🔥 must appear in Борин given breakdown");
+    assert_eq!(fire.count, 1);
+    assert_eq!(
+        borya_breakdown.received_total, 0,
+        "Боря never authored a reacted message in this fixture"
+    );
+    assert!(borya_breakdown.received.is_empty());
+
+    // Маша — только получает (никогда не реагирует сама в этой фикстуре).
+    let masha = people
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Маша"))
+        .unwrap();
+    let masha_breakdown = get_reaction_person_breakdown(&conn, chat.id, masha.id).unwrap();
+    assert_eq!(masha_breakdown.given_total, 0);
+    assert!(masha_breakdown.given.is_empty());
+    assert_eq!(masha_breakdown.received_total, 6);
+    let masha_thumbs_up = masha_breakdown
+        .received
+        .iter()
+        .find(|e| e.emoji.as_deref() == Some("👍"))
+        .unwrap();
+    assert_eq!(masha_thumbs_up.count, 5);
+}
+
+#[test]
+fn get_reaction_person_breakdown_reports_total_without_rows_for_pre_migration_data() {
+    // Симулирует reaction_actors, вставленный до миграции 0009 (kind/
+    // emoji/document_id тогда ещё не существовали, ALTER TABLE оставляет
+    // NULL для старых строк) — общий счётчик уже верный (посчитан не из
+    // этой разбивки), а разбивки по эмодзи нет и не может быть без
+    // повторного импорта.
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "three_day_chat.json");
+    let people = people_ordered_by_name(&conn, chat.id);
+    let someone = &people[0];
+
+    conn.execute(
+        "INSERT INTO reaction_actors (chat_id, message_id, person_id, kind, emoji, document_id) \
+         SELECT ?1, id, ?2, NULL, NULL, NULL FROM messages WHERE chat_id = ?1 LIMIT 1",
+        params![chat.id, someone.id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO reaction_person_stats (chat_id, person_id, given_count, received_count) \
+         VALUES (?1, ?2, 3, 0) \
+         ON CONFLICT(chat_id, person_id) DO UPDATE SET given_count = given_count + 3",
+        params![chat.id, someone.id],
+    )
+    .unwrap();
+
+    let breakdown = get_reaction_person_breakdown(&conn, chat.id, someone.id).unwrap();
+    assert_eq!(breakdown.given_total, 3);
+    assert!(
+        breakdown.given.is_empty(),
+        "a NULL-kind row (pre-migration data) must not surface as a fake emoji category"
+    );
 }

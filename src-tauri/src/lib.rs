@@ -12,7 +12,7 @@ use db::{ChatSummary, CountingReader, Db, ImportContext, ImportPhase, ImportProg
 use import::ImportError;
 use metrics::{
     ActivitySeries, ChatTotals, MessageTypeDetail, MessageTypeKind, MessageTypeOverview,
-    ReactionsOverview, TopParticipants, TopReactedMessage, TypeTimeView,
+    PersonReactionBreakdown, ReactionsOverview, TopParticipants, TopReactedMessage, TypeTimeView,
 };
 
 /// Единственный текущий импорт можно отменить — конкурентных импортов
@@ -217,6 +217,16 @@ fn get_top_reacted_messages(
     metrics::get_top_reacted_messages(&conn, chat_id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_reaction_person_breakdown(
+    db: tauri::State<'_, Db>,
+    chat_id: i64,
+    person_id: i64,
+) -> Result<PersonReactionBreakdown, String> {
+    let conn = db.0.get().map_err(|e| e.to_string())?;
+    metrics::get_reaction_person_breakdown(&conn, chat_id, person_id).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -251,6 +261,7 @@ pub fn run() {
             get_message_type_detail,
             get_reactions_overview,
             get_top_reacted_messages,
+            get_reaction_person_breakdown,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

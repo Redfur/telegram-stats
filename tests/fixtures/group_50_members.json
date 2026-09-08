@@ -1375,6 +1375,34 @@
       "action": "migrate_to_supergroup",
       "text": "",
       "text_entities": []
+    },
+    {
+      "id": 59,
+      "type": "message",
+      "date": "2021-06-01T13:00:00",
+      "date_unixtime": "1624840400",
+      "from": "Аня",
+      "from_id": "user000000100",
+      "text": "",
+      "text_entities": [],
+      "photo": "photos/photo_1@01-06-2021_13-00-00.jpg",
+      "photo_file_size": 123456,
+      "width": 800,
+      "height": 600,
+      "reactions": [
+        {
+          "type": "emoji",
+          "count": 4,
+          "emoji": "🔥",
+          "recent": [
+            {
+              "from": "Боря",
+              "from_id": "user000000101",
+              "date": "2021-06-01T13:01:00"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

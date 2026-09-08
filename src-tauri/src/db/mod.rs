@@ -96,6 +96,10 @@ pub fn open_and_migrate(path: &Path) -> rusqlite::Result<Connection> {
         conn.execute_batch(include_str!("migrations/0008_reactions.sql"))?;
         conn.pragma_update(None, "user_version", 8)?;
     }
+    if version < 9 {
+        conn.execute_batch(include_str!("migrations/0009_reaction_actor_emoji.sql"))?;
+        conn.pragma_update(None, "user_version", 9)?;
+    }
 
     Ok(conn)
 }
