@@ -231,17 +231,63 @@ DELETE/INSERT и ловят `UNIQUE constraint failed` (тест
 не была частью precompute-среза. Миграция `0007` добавила туда
 `first_ts`/`last_ts` (период активности участника — эти два поля экран
 и показывает в колонке «Активность», `message_count` уже был в таблице).
-48 Rust-тестов зелёные, `cargo clippy` чист.
+Блок «Реакции» (секция 04 дашборда, первый срез Фазы 6 «Социальная
+динамика», `docs/SPEC.md` §9): `src-tauri/src/db/migrations/
+0008_reactions.sql` — `message_reactions` (по строке на тип реакции на
+сообщении, `count` авторитетный + `known_actor_count = len(recent)`),
+`reaction_actors` (по строке на известного реагировавшего),
+`message_reaction_previews` (текст сообщения нигде в БД больше не
+хранится — `messages` только `text_len`/`word_count`, поэтому превью для
+топа залайканных сообщений снимается один раз при импорте, только для
+сообщений с реакциями) — все три заполняются **во время потокового
+парсинга** (`db/import.rs`), не пересчитываются из `messages` задним
+числом, в отличие от `message_type_*`: Telegram нигде, кроме `reactions`
+на самом сообщении экспорта, эту информацию не хранит. Из-за этого self-
+heal для чата, импортированного до миграции `0008`, невозможен — только
+переимпорт (`metrics::reactions::ReactionsOverview::NeedsReimport`).
+Отдельно — `NotInExport`: чат прошёл актуальный импортер, но сам экспорт
+сделан старой версией Telegram Desktop без поля `reactions` вовсе
+(`chats.reactions_supported`, ставится по факту хотя бы одного
+`Some(reactions)`, даже пустого, на любом сообщении при импорте) —
+переимпорт того же файла не поможет, фронт (`ReactionsBlock`) показывает
+разный текст для этих двух исходов через `UnavailableCard` (с кнопкой
+«Обновить выгрузку» и без). Telegram отдаёт в `recent` не полный список
+реагировавших — если `count > known_actor_count`, «кто ставит» в сводке
+занижен (`given_data_incomplete`, помечено в UI отдельной подписью);
+«кому ставят» при этом остаётся точным — считается по авторитетному
+`count`, сгруппированному по автору сообщения, а не по `recent`.
+`metrics::reactions::recompute_reaction_metrics`/
+`recompute_reaction_person_stats` — обычный precompute/self-heal поверх
+уже сохранённых сырых таблиц (сами агрегаты, в отличие от сырых данных,
+пересчитываемы), тот же приём `with_write_lock`, что и у дашборда/типов
+сообщений. `merge_people` пересчитывает `reaction_person_stats` — обе
+стороны: перенос `reaction_actors.person_id` меняет «кто ставит», перенос
+`messages.person_id` (уже был) меняет «кому ставят» через join. Не в этом
+срезе: «кто чей фанат» (пары person→person), разбивка по времени,
+`document_id` custom_emoji не резолвится в картинку (нет сети в рантайме)
+— фронт показывает нейтральную плашку вместо глифа.
+
+54 Rust-тестов зелёные, `cargo clippy` чист.
 
 Фронт: `Skeleton` (`src/components/ui/Skeleton/`) — пульсирующий
 плейсхолдер, заменил «ничего не рендерим, пока данные не пришли» в
-`Dashboard.tsx`/`MessageTypesBlock.tsx`/`ParticipantsManager.tsx`
-(скелетон-строки в `Participants.tsx`, шаг мастера импорта
-`ParticipantReviewStep` его не запрашивает — там `people` уже посчитаны
-к открытию шага). Дебаунс смены `chatId` на 150 мс перед invoke —
-`Dashboard.tsx`/`MessageTypesBlock.tsx`/`usePeopleReview` — быстрый
-скролл по списку чатов в рельсе больше не ставит в очередь запросы на
-каждый промежуточный чат.
+`Dashboard.tsx`/`MessageTypesBlock.tsx`/`ReactionsBlock.tsx`/
+`ParticipantsManager.tsx` (скелетон-строки в `Participants.tsx`, шаг
+мастера импорта `ParticipantReviewStep` его не запрашивает — там `people`
+уже посчитаны к открытию шага). Дебаунс смены `chatId` на 150 мс перед
+invoke — `Dashboard.tsx`/`MessageTypesBlock.tsx`/`ReactionsBlock.tsx`/
+`usePeopleReview` — быстрый скролл по списку чатов в рельсе больше не
+ставит в очередь запросы на каждый промежуточный чат. `ReactionsBlock`
+(`src/components/ReactionsBlock/`) — секция 04 дашборда, тот же паттерн
+«skeleton → недоступно → пусто → контент», что и `MessageTypesBlock`, но
+с двумя разными исходами недоступности (`ReactionsOverview` в
+`lib/types.ts`, см. выше) вместо одного: `needs_reimport` даёт
+`UnavailableCard` с кнопкой «Обновить выгрузку», `not_in_export` — ту же
+карточку без кнопки (переимпорт того же файла не поможет). Подкомпоненты
+— `ReactionEmojiList` (сводка + топ эмодзи), `ReactionPersonLists`
+(«кто ставит»/«кому ставят» рядом, с пометкой неполноты на первом
+списке), `TopReactedMessages` (топ-10, отдельный `invoke` после
+получения `overview.status === "available"`).
 ETA в прогрессе импорта, параллельные импорты, явный выбор при конфликте
 `tg_chat_id` без `id` в старом экспорте, авто-детект дублей/ботов в шаге
 разбора участников и остальные метрики из SPEC §9 — сознательно не в
