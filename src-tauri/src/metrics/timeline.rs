@@ -59,6 +59,12 @@ pub struct TimelineSummary {
     pub total: i64,
     pub current: i64,
     pub left: i64,
+    /// `chats.last_msg_ts` — та же точка отсчёта, что бэкенд использует
+    /// для срока всё ещё активных участников (median_tenure_days), нужна
+    /// фронту, чтобы посчитать срок конкретного наведённого участника тем
+    /// же способом, не системными часами (docs/SPEC.md §11 — метрики
+    /// живут в периоде чата, не в wall-clock).
+    pub as_of_ts: Option<i64>,
     pub median_tenure_days: Option<f64>,
     pub peak_headcount: i64,
     pub peak_headcount_ts: Option<i64>,
@@ -324,6 +330,7 @@ pub fn get_participant_timeline(
         total,
         current: current_count,
         left,
+        as_of_ts: last_msg_ts,
         median_tenure_days,
         peak_headcount: peak,
         peak_headcount_ts: peak_ts,
@@ -346,6 +353,7 @@ mod tests {
             total: 5,
             current: 4,
             left: 1,
+            as_of_ts: Some(100),
             median_tenure_days: Some(12.5),
             peak_headcount: 5,
             peak_headcount_ts: Some(100),
