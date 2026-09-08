@@ -106,7 +106,12 @@ pub fn merge_people(
     Ok(())
 }
 
-pub fn hide_person(conn: &Connection, chat_id: i64, person_id: i64, hidden: bool) -> rusqlite::Result<()> {
+pub fn hide_person(
+    conn: &Connection,
+    chat_id: i64,
+    person_id: i64,
+    hidden: bool,
+) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE people SET is_hidden = ?1 WHERE id = ?2 AND chat_id = ?3",
         params![hidden, person_id, chat_id],

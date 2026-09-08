@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use super::precompute::ensure_dashboard_ready;
+use super::precompute::{ensure_dashboard_ready, with_write_lock};
 
 /// Разрез «тип сообщения» — одна раскладка на все счётные метрики (макет
 /// «Дашборд», ход `t6`). 13 типов на этот срез, без реакций/полноценной
@@ -562,104 +562,108 @@ fn ensure_message_type_precomputed(conn: &Connection, chat_id: i64) -> rusqlite:
 /// Требует, чтобы `person_message_stats` (`metrics::precompute`) уже была
 /// посчитана — `get_message_type_detail` резолвит через неё «сколько
 /// всего сообщений у этого участника», поэтому досчитываем и её тоже,
-/// если чат ещё не проходил через `ensure_dashboard_ready`.
+/// если чат ещё не проходил через `ensure_dashboard_ready`. Безопасна к
+/// конкурентным вызовам для одного `chat_id` — см.
+/// `precompute::with_write_lock`.
 pub fn recompute_message_type_metrics(conn: &Connection, chat_id: i64) -> rusqlite::Result<()> {
     ensure_dashboard_ready(conn, chat_id)?;
 
-    conn.execute(
-        "DELETE FROM message_type_counts WHERE chat_id = ?1",
-        params![chat_id],
-    )?;
-    conn.execute(
-        "DELETE FROM message_type_time_buckets WHERE chat_id = ?1",
-        params![chat_id],
-    )?;
-    conn.execute(
-        "DELETE FROM message_type_durations WHERE chat_id = ?1",
-        params![chat_id],
-    )?;
-
-    let bounds: Option<(Option<i64>, Option<i64>)> = conn
-        .query_row(
-            "SELECT first_msg_ts, last_msg_ts FROM chats WHERE id = ?1",
+    with_write_lock(conn, || {
+        conn.execute(
+            "DELETE FROM message_type_counts WHERE chat_id = ?1",
             params![chat_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-    let span_days = match bounds {
-        Some((Some(a), Some(b))) => (b - a).max(0) / 86_400,
-        _ => 0,
-    };
-    let month_available = span_days >= MONTH_VIEW_MIN_SPAN_DAYS;
-
-    for kind in MessageTypeKind::ALL {
-        let predicate = kind.predicate_sql();
-        let key = kind.as_key();
-
-        let count: i64 = conn.query_row(
-            &format!("SELECT COUNT(*) FROM messages WHERE chat_id = ?1 AND {predicate}"),
-            params![chat_id],
-            |row| row.get(0),
         )?;
         conn.execute(
-            "INSERT INTO message_type_counts (chat_id, kind, count) VALUES (?1, ?2, ?3)",
-            params![chat_id, key, count],
+            "DELETE FROM message_type_time_buckets WHERE chat_id = ?1",
+            params![chat_id],
         )?;
-        if count == 0 {
-            continue;
-        }
+        conn.execute(
+            "DELETE FROM message_type_durations WHERE chat_id = ?1",
+            params![chat_id],
+        )?;
 
-        let mut views: Vec<(&str, &str)> = vec![
-            (
-                TypeTimeView::DayOfWeek.as_key(),
-                TypeTimeView::DayOfWeek.bucket_select_expr(),
-            ),
-            (
-                TypeTimeView::HourOfDay.as_key(),
-                TypeTimeView::HourOfDay.bucket_select_expr(),
-            ),
-        ];
-        if month_available {
-            views.push((
-                RATE_MONTH_VIEW_KEY,
-                TypeTimeView::Month.bucket_select_expr(),
-            ));
-        } else {
-            views.push((RATE_DAY_VIEW_KEY, RateGranularity::Day.bucket_select_expr()));
-        }
-        for (view_key, expr) in views {
-            let sql = format!(
-                "INSERT INTO message_type_time_buckets (chat_id, kind, view, bucket, count) \
-                 SELECT ?1, ?2, ?3, {expr}, COUNT(*) FROM messages \
-                 WHERE chat_id = ?1 AND ts IS NOT NULL AND {predicate} GROUP BY {expr}"
-            );
-            conn.execute(&sql, params![chat_id, key, view_key])?;
-        }
+        let bounds: Option<(Option<i64>, Option<i64>)> = conn
+            .query_row(
+                "SELECT first_msg_ts, last_msg_ts FROM chats WHERE id = ?1",
+                params![chat_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let span_days = match bounds {
+            Some((Some(a), Some(b))) => (b - a).max(0) / 86_400,
+            _ => 0,
+        };
+        let month_available = span_days >= MONTH_VIEW_MIN_SPAN_DAYS;
 
-        if kind.is_duration_based() {
-            let durations: Vec<i64> = {
-                let sql = format!(
-                    "SELECT duration_seconds FROM messages WHERE chat_id = ?1 AND {predicate} \
-                     AND duration_seconds IS NOT NULL ORDER BY duration_seconds"
-                );
-                let mut stmt = conn.prepare(&sql)?;
-                let rows = stmt.query_map(params![chat_id], |row| row.get(0))?;
-                rows.collect::<rusqlite::Result<Vec<_>>>()?
-            };
-            let total_seconds: i64 = durations.iter().sum();
-            let max_seconds = durations.iter().copied().max().unwrap_or(0);
-            conn.execute(
-                "INSERT INTO message_type_durations \
-                 (chat_id, kind, total_seconds, median_seconds, max_seconds) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![chat_id, key, total_seconds, median(&durations), max_seconds],
+        for kind in MessageTypeKind::ALL {
+            let predicate = kind.predicate_sql();
+            let key = kind.as_key();
+
+            let count: i64 = conn.query_row(
+                &format!("SELECT COUNT(*) FROM messages WHERE chat_id = ?1 AND {predicate}"),
+                params![chat_id],
+                |row| row.get(0),
             )?;
+            conn.execute(
+                "INSERT INTO message_type_counts (chat_id, kind, count) VALUES (?1, ?2, ?3)",
+                params![chat_id, key, count],
+            )?;
+            if count == 0 {
+                continue;
+            }
+
+            let mut views: Vec<(&str, &str)> = vec![
+                (
+                    TypeTimeView::DayOfWeek.as_key(),
+                    TypeTimeView::DayOfWeek.bucket_select_expr(),
+                ),
+                (
+                    TypeTimeView::HourOfDay.as_key(),
+                    TypeTimeView::HourOfDay.bucket_select_expr(),
+                ),
+            ];
+            if month_available {
+                views.push((
+                    RATE_MONTH_VIEW_KEY,
+                    TypeTimeView::Month.bucket_select_expr(),
+                ));
+            } else {
+                views.push((RATE_DAY_VIEW_KEY, RateGranularity::Day.bucket_select_expr()));
+            }
+            for (view_key, expr) in views {
+                let sql = format!(
+                    "INSERT INTO message_type_time_buckets (chat_id, kind, view, bucket, count) \
+                     SELECT ?1, ?2, ?3, {expr}, COUNT(*) FROM messages \
+                     WHERE chat_id = ?1 AND ts IS NOT NULL AND {predicate} GROUP BY {expr}"
+                );
+                conn.execute(&sql, params![chat_id, key, view_key])?;
+            }
+
+            if kind.is_duration_based() {
+                let durations: Vec<i64> = {
+                    let sql = format!(
+                        "SELECT duration_seconds FROM messages WHERE chat_id = ?1 AND {predicate} \
+                         AND duration_seconds IS NOT NULL ORDER BY duration_seconds"
+                    );
+                    let mut stmt = conn.prepare(&sql)?;
+                    let rows = stmt.query_map(params![chat_id], |row| row.get(0))?;
+                    rows.collect::<rusqlite::Result<Vec<_>>>()?
+                };
+                let total_seconds: i64 = durations.iter().sum();
+                let max_seconds = durations.iter().copied().max().unwrap_or(0);
+                conn.execute(
+                    "INSERT INTO message_type_durations \
+                     (chat_id, kind, total_seconds, median_seconds, max_seconds) \
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![chat_id, key, total_seconds, median(&durations), max_seconds],
+                )?;
+            }
         }
-    }
 
-    recompute_message_type_participant_stats(conn, chat_id)?;
+        recompute_message_type_participant_stats(conn, chat_id)?;
 
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Только `message_type_participant_stats` — вызывается после
@@ -668,28 +672,32 @@ pub fn recompute_message_type_metrics(conn: &Connection, chat_id: i64) -> rusqli
 /// `messages.person_id` на `primary_id`, из-за чего эта (единственная
 /// person-keyed среди `message_type_*`) таблица перестаёт соответствовать
 /// `messages`, а счётчики/гистограммы по типам (person-agnostic) — нет.
+/// Безопасна к конкурентным вызовам для одного `chat_id` — см.
+/// `precompute::with_write_lock`.
 pub fn recompute_message_type_participant_stats(
     conn: &Connection,
     chat_id: i64,
 ) -> rusqlite::Result<()> {
-    conn.execute(
-        "DELETE FROM message_type_participant_stats WHERE chat_id = ?1",
-        params![chat_id],
-    )?;
-    for kind in MessageTypeKind::ALL {
-        let predicate = kind.predicate_sql();
-        let key = kind.as_key();
-        let sql = format!(
-            "INSERT INTO message_type_participant_stats \
-             (chat_id, kind, person_id, count, duration_seconds) \
-             SELECT ?1, ?2, person_id, \
-                    SUM(CASE WHEN {predicate} THEN 1 ELSE 0 END), \
-                    SUM(CASE WHEN {predicate} THEN COALESCE(duration_seconds, 0) ELSE 0 END) \
-             FROM messages WHERE chat_id = ?1 AND person_id IS NOT NULL \
-             GROUP BY person_id \
-             HAVING SUM(CASE WHEN {predicate} THEN 1 ELSE 0 END) > 0"
-        );
-        conn.execute(&sql, params![chat_id, key])?;
-    }
-    Ok(())
+    with_write_lock(conn, || {
+        conn.execute(
+            "DELETE FROM message_type_participant_stats WHERE chat_id = ?1",
+            params![chat_id],
+        )?;
+        for kind in MessageTypeKind::ALL {
+            let predicate = kind.predicate_sql();
+            let key = kind.as_key();
+            let sql = format!(
+                "INSERT INTO message_type_participant_stats \
+                 (chat_id, kind, person_id, count, duration_seconds) \
+                 SELECT ?1, ?2, person_id, \
+                        SUM(CASE WHEN {predicate} THEN 1 ELSE 0 END), \
+                        SUM(CASE WHEN {predicate} THEN COALESCE(duration_seconds, 0) ELSE 0 END) \
+                 FROM messages WHERE chat_id = ?1 AND person_id IS NOT NULL \
+                 GROUP BY person_id \
+                 HAVING SUM(CASE WHEN {predicate} THEN 1 ELSE 0 END) > 0"
+            );
+            conn.execute(&sql, params![chat_id, key])?;
+        }
+        Ok(())
+    })
 }

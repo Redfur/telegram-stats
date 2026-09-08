@@ -218,7 +218,11 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                 max_ts = Some(max_ts.map_or(ts, |cur| cur.max(ts)));
             }
             if let Some((pid, name)) = alias_pid_name {
-                let entry = alias_seen.entry(pid).or_default().entry(name).or_insert((None, None));
+                let entry = alias_seen
+                    .entry(pid)
+                    .or_default()
+                    .entry(name)
+                    .or_insert((None, None));
                 if let Some(ts) = m.date_unixtime {
                     entry.0 = Some(entry.0.map_or(ts, |cur| cur.min(ts)));
                     entry.1 = Some(entry.1.map_or(ts, |cur| cur.max(ts)));

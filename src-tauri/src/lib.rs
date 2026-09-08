@@ -3,7 +3,7 @@ pub mod import;
 pub mod metrics;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tauri::{Emitter, Manager};
@@ -16,8 +16,9 @@ use metrics::{
 };
 
 /// Единственный текущий импорт можно отменить — конкурентных импортов
-/// не поддерживаем (`Db`'s `Mutex<Connection>` и так их сериализует),
-/// поэтому один разделяемый флаг на всё приложение достаточен.
+/// не поддерживаем (это ограничение UI/UX, не пула соединений — тот сам
+/// по себе спокойно выдержал бы параллельный импорт), поэтому один
+/// разделяемый флаг на всё приложение достаточен.
 struct ImportCancelFlag(Arc<AtomicBool>);
 
 /// Как часто реально шлём `ingest://progress` в JS — на каждое сообщение
@@ -36,7 +37,10 @@ fn classify_import_error(err: &ImportError) -> ImportErrorInfo {
         ImportError::NotTelegramExport => "not_telegram_export",
         ImportError::Cancelled => "cancelled",
         ImportError::Io(_) => "io",
-        ImportError::Json { index: None, source } => {
+        ImportError::Json {
+            index: None,
+            source,
+        } => {
             use serde_json::error::Category;
             match source.classify() {
                 Category::Syntax | Category::Eof => "invalid_json",
@@ -66,7 +70,7 @@ async fn import_chat(
     path: String,
 ) -> Result<ChatSummary, String> {
     cancel.0.store(false, Ordering::Relaxed);
-    let conn = db.0.clone();
+    let pool = db.0.clone();
     let cancel_flag = cancel.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
@@ -81,9 +85,7 @@ async fn import_chat(
             }
         };
 
-        let mut conn = conn
-            .lock()
-            .map_err(|_| "database lock poisoned".to_string())?;
+        let mut conn = pool.get().map_err(|e| e.to_string())?;
         let mut ctx = ImportContext {
             bytes_read: &bytes_read,
             on_progress,
@@ -103,19 +105,19 @@ fn cancel_import(cancel: tauri::State<'_, ImportCancelFlag>) {
 
 #[tauri::command]
 fn list_chats(db: tauri::State<'_, Db>) -> Result<Vec<ChatSummary>, String> {
-    let conn = db.0.lock().map_err(|_| "database lock poisoned".to_string())?;
+    let conn = db.0.get().map_err(|e| e.to_string())?;
     db::list_chats(&conn).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_chat(db: tauri::State<'_, Db>, chat_id: i64) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|_| "database lock poisoned".to_string())?;
+    let conn = db.0.get().map_err(|e| e.to_string())?;
     db::delete_chat(&conn, chat_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_people(db: tauri::State<'_, Db>, chat_id: i64) -> Result<Vec<PersonRow>, String> {
-    let conn = db.0.lock().map_err(|_| "database lock poisoned".to_string())?;
+    let conn = db.0.get().map_err(|e| e.to_string())?;
     db::get_people(&conn, chat_id).map_err(|e| e.to_string())
 }
 
@@ -126,13 +128,18 @@ fn merge_people(
     primary_id: i64,
     other_ids: Vec<i64>,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|_| "database lock poisoned".to_string())?;
+    let conn = db.0.get().map_err(|e| e.to_string())?;
     db::merge_people(&conn, chat_id, primary_id, &other_ids).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hide_person(db: tauri::State<'_, Db>, chat_id: i64, person_id: i64, hidden: bool) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|_| "database lock poisoned".to_string())?;
+fn hide_person(
+    db: tauri::State<'_, Db>,
+    chat_id: i64,
+    person_id: i64,
+    hidden: bool,
+) -> Result<(), String> {
+    let conn = db.0.get().map_err(|e| e.to_string())?;
     db::hide_person(&conn, chat_id, person_id, hidden).map_err(|e| e.to_string())
 }
 
@@ -143,15 +150,13 @@ fn rename_person(
     person_id: i64,
     display_name: String,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|_| "database lock poisoned".to_string())?;
+    let conn = db.0.get().map_err(|e| e.to_string())?;
     db::rename_person(&conn, chat_id, person_id, &display_name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_chat_totals(db: tauri::State<'_, Db>, chat_id: i64) -> Result<Option<ChatTotals>, String> {
-    let conn =
-        db.0.lock()
-            .map_err(|_| "database lock poisoned".to_string())?;
+    let conn = db.0.get().map_err(|e| e.to_string())?;
     metrics::get_chat_totals(&conn, chat_id).map_err(|e| e.to_string())
 }
 
@@ -160,17 +165,13 @@ fn get_activity_series(
     db: tauri::State<'_, Db>,
     chat_id: i64,
 ) -> Result<Option<ActivitySeries>, String> {
-    let conn =
-        db.0.lock()
-            .map_err(|_| "database lock poisoned".to_string())?;
+    let conn = db.0.get().map_err(|e| e.to_string())?;
     metrics::get_activity_series(&conn, chat_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_top_participants(db: tauri::State<'_, Db>, chat_id: i64) -> Result<TopParticipants, String> {
-    let conn =
-        db.0.lock()
-            .map_err(|_| "database lock poisoned".to_string())?;
+    let conn = db.0.get().map_err(|e| e.to_string())?;
     metrics::get_top_participants(&conn, chat_id).map_err(|e| e.to_string())
 }
 
@@ -179,9 +180,7 @@ fn get_message_type_overview(
     db: tauri::State<'_, Db>,
     chat_id: i64,
 ) -> Result<MessageTypeOverview, String> {
-    let conn =
-        db.0.lock()
-            .map_err(|_| "database lock poisoned".to_string())?;
+    let conn = db.0.get().map_err(|e| e.to_string())?;
     metrics::get_message_type_overview(&conn, chat_id).map_err(|e| e.to_string())
 }
 
@@ -192,9 +191,7 @@ fn get_message_type_detail(
     kind: MessageTypeKind,
     view: Option<TypeTimeView>,
 ) -> Result<Option<MessageTypeDetail>, String> {
-    let conn =
-        db.0.lock()
-            .map_err(|_| "database lock poisoned".to_string())?;
+    let conn = db.0.get().map_err(|e| e.to_string())?;
     metrics::get_message_type_detail(&conn, chat_id, kind, view).map_err(|e| e.to_string())
 }
 
@@ -206,8 +203,13 @@ pub fn run() {
         .setup(|app| {
             let app_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_dir)?;
-            let conn = db::open_and_migrate(&app_dir.join("telegram-stats.sqlite3"))?;
-            app.manage(Db(Arc::new(Mutex::new(conn))));
+            let db_path = app_dir.join("telegram-stats.sqlite3");
+            // Миграции — один раз на отдельном соединении, до открытия
+            // пула: PRAGMA user_version читается-пишется без гонки
+            // нескольких соединений на пустой базе.
+            db::open_and_migrate(&db_path)?;
+            let pool = db::build_pool(&db_path)?;
+            app.manage(Db(pool));
             app.manage(ImportCancelFlag(Arc::new(AtomicBool::new(false))));
             Ok(())
         })

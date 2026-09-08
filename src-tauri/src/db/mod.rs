@@ -5,13 +5,40 @@ pub use import::{import_into_db, CountingReader, ImportContext, ImportProgress};
 pub use people::{get_people, hide_person, merge_people, rename_person, PersonRow};
 
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::Connection;
 
-/// Управляемое состояние Tauri: одно соединение на всё приложение,
-/// защищённое мьютексом (нужно для перемещения в `spawn_blocking`).
-pub struct Db(pub Arc<Mutex<Connection>>);
+pub type DbPool = r2d2::Pool<SqliteConnectionManager>;
+
+/// Управляемое состояние Tauri: пул соединений, не одно на всё
+/// приложение под мьютексом. SQLite в WAL-режиме допускает сколько
+/// угодно параллельных читателей — раньше единственный `Mutex<Connection>`
+/// сериализовал вообще все команды, поэтому один тяжёлый self-heal
+/// пересчёт метрик (`metrics::precompute`) для одного чата блокировал
+/// запросы для всех остальных, пока не закончится: именно так ловился
+/// полный фриз интерфейса при быстром переключении между чатами.
+/// `busy_timeout` в `build_pool` — на случай редкой гонки двух пишущих
+/// транзакций (например self-heal одного и того же ещё не посчитанного
+/// чата, запущенный из двух конкурентных команд) — SQLite и так admits
+/// только одного писателя разом, таймаут просто ждёт вместо мгновенной
+/// ошибки "database is locked".
+pub struct Db(pub DbPool);
+
+/// Собирает пул поверх уже смигрированного файла БД (`open_and_migrate`
+/// применяет миграции один раз на отдельном соединении до вызова этой
+/// функции). `max_size` — с запасом на самый частый всплеск: открытие
+/// одного чата бьёт до пяти команд дашборда почти одновременно.
+pub fn build_pool(path: &Path) -> Result<DbPool, r2d2::Error> {
+    let manager = SqliteConnectionManager::file(path).with_init(|conn| {
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.busy_timeout(Duration::from_secs(5))?;
+        Ok(())
+    });
+    r2d2::Pool::builder().max_size(8).build(manager)
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ChatSummary {

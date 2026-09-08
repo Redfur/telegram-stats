@@ -164,7 +164,27 @@ time-series метрикой. `participant_count` в `get_chat_totals`/
 меняется (`UnavailableCard`, как и раньше). `merge_people` дополнительно
 пересчитывает `message_type_participant_stats` (единственная
 person-keyed таблица в этой группе) тем же приёмом, что и
-`person_message_stats`. 45 Rust-тестов зелёные, `cargo clippy` чист.
+`person_message_stats`.
+
+Precompute не убрал фриз целиком: `Db` был единственным `Mutex<Connection>`
+на всё приложение, поэтому self-heal-пересчёт одного чата держал мьютекс
+и блокировал вообще все остальные запросы, включая уже готовые чаты —
+именно так ловился полный фриз при быстром переключении. `db::build_pool`
+(`r2d2`/`r2d2_sqlite`) заменил его пулом соединений к тому же файлу; `Db`
+теперь `pub struct Db(pub DbPool)`, команды берут соединение через
+`db.0.get()`, а не `db.0.lock()`. Миграции по-прежнему прогоняются один
+раз через `open_and_migrate` на отдельном соединении до сборки пула. Это
+вскрыло гонку: `metrics::precompute::with_write_lock` оборачивает каждый
+пересчёт (`recompute_dashboard_metrics`/`recompute_message_type_metrics`/
+`recompute_message_type_participant_stats`) в `BEGIN IMMEDIATE`/`COMMIT`,
+если соединение не внутри чужой транзакции (`Connection::is_autocommit`)
+— иначе два конкурентных self-heal одного и того же непосчитанного чата
+(два разных соединения из пула вместо одного мьютекса) перемежают свои
+DELETE/INSERT и ловят `UNIQUE constraint failed` (тест
+`tests/db_pool.rs` воспроизводит это до фикса, 6 потоков конкурентно
+досчитывают один чат). `busy_timeout` в `build_pool` — конкурирующая
+транзакция ждёт вместо мгновенной ошибки "database is locked". 46
+Rust-тестов зелёные, `cargo clippy` чист.
 ETA в прогрессе импорта, параллельные импорты, явный выбор при конфликте
 `tg_chat_id` без `id` в старом экспорте, авто-детект дублей/ботов в шаге
 разбора участников и остальные метрики из SPEC §9 — сознательно не в
