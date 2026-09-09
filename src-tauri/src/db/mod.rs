@@ -116,6 +116,12 @@ pub fn open_and_migrate(path: &Path) -> rusqlite::Result<Connection> {
         conn.execute_batch(include_str!("migrations/0013_person_fk_indexes.sql"))?;
         conn.pragma_update(None, "user_version", 13)?;
     }
+    if version < 14 {
+        conn.execute_batch(include_str!(
+            "migrations/0014_reaction_message_id_indexes.sql"
+        ))?;
+        conn.pragma_update(None, "user_version", 14)?;
+    }
 
     Ok(conn)
 }

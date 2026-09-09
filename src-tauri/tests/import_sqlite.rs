@@ -70,6 +70,10 @@ fn fresh_db() -> Connection {
         "../src/db/migrations/0013_person_fk_indexes.sql"
     ))
     .expect("apply migration 0013");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0014_reaction_message_id_indexes.sql"
+    ))
+    .expect("apply migration 0014");
     conn
 }
 
@@ -323,6 +327,39 @@ fn cancelling_mid_import_leaves_no_trace() {
         db::list_chats(&conn).unwrap().is_empty(),
         "a cancelled import must not commit a partial chat"
     );
+}
+
+#[test]
+fn reaction_child_tables_have_an_index_led_by_message_id() {
+    // Регрессия на баг того же класса, что чинила 0013: DELETE FROM
+    // messages (реимпорт) и каскад DELETE FROM chats (delete_chat)
+    // неявно проверяют потомков в этих трёх таблицах по голому
+    // message_id — без ведущего message_id в индексе это полный скан
+    // таблицы на каждое удаляемое сообщение (см. 0014). Проверяем план
+    // запроса, а не время выполнения — детерминированно, без риска
+    // флейкануть на медленной машине/CI.
+    let conn = fresh_db();
+    for table in [
+        "message_reactions",
+        "reaction_actors",
+        "message_reaction_previews",
+    ] {
+        let plan: String = conn
+            .query_row(
+                &format!("EXPLAIN QUERY PLAN SELECT 1 FROM {table} WHERE message_id = 1"),
+                [],
+                |row| row.get::<_, String>(3),
+            )
+            .unwrap();
+        // "SEARCH ... (message_id=?)" — настоящий seek по индексу,
+        // ведущему message_id. "SCAN ... USING COVERING INDEX" тоже
+        // упоминает индекс, но всё ещё проходит все строки — именно
+        // это и было багом до 0014 (составные индексы вели chat_id).
+        assert!(
+            plan.starts_with(&format!("SEARCH {table} ")) && plan.contains("(message_id=?)"),
+            "{table}: expected a message_id index seek, got plan: {plan}"
+        );
+    }
 }
 
 #[test]
