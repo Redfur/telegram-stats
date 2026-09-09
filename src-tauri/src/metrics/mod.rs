@@ -24,6 +24,6 @@ pub use reactions::{
     TopReactedMessage,
 };
 pub use timeline::{
-    get_participant_timeline, CompositionPoint, GroupEventRow, PersonTimelineRow, Segment,
-    SegmentEndKind, SegmentStartKind, TimelineOverview, TimelineSummary,
+    get_participant_timeline, CompositionPoint, GroupEventRow, PersonEvent, PersonTimelineRow,
+    Segment, TimelineOverview, TimelineSummary,
 };

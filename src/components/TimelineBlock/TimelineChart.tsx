@@ -1,10 +1,7 @@
+import { useState } from "react";
 import { formatFullDateTime } from "../../lib/formatMessageTimestamp";
 import { seriesColorVar } from "./timelineColors";
-import type {
-  PersonTimelineRow,
-  TimelineGroupEventKind,
-  TimelineSummary,
-} from "../../lib/types";
+import type { PersonTimelineRow, TimelineGroupEventKind, TimelineSummary } from "../../lib/types";
 import styles from "./TimelineBlock.module.css";
 
 interface TimelineChartProps {
@@ -18,6 +15,18 @@ const GROUP_EVENT_LABELS: Record<TimelineGroupEventKind, string> = {
   photo_changed: "Смена фото",
   migrated: "Миграция в супергруппу",
 };
+
+const PERSON_EVENT_LABELS: Record<string, string> = {
+  joined: "вход",
+  left: "выход",
+  removed: "удаление",
+};
+
+interface DotTooltip {
+  leftPct: number;
+  title: string;
+  date: string;
+}
 
 // Общий диапазон времени для всех слоёв графика (композиция, лента
 // групповых событий, строки участников) — не только по составу: точки
@@ -84,10 +93,13 @@ function compositionStepPoints(summary: TimelineSummary, min: number, max: numbe
 // входом — пунктир), годовые метки снизу. Позиционирование — проценты от
 // общего временного диапазона, тем же приёмом, что и диаграмма-весы в
 // ReactionPersonFilter (div вместо recharts — нестандартная форма чарта).
-// Наведение на точку — нативный `title` (простой тултип без отдельного
-// UI-слоя); наведение на строку участника — поднимается в TimelineHeader
-// через капсулу, толщина линии/масштаб точки — чистый CSS `:hover`.
+// Точки событий рисуются отдельно от границ сегментов (`person.events`,
+// не `person.segments`) — у объединённых слиянием аккаунтов событие
+// может лежать внутри уже непрерывного покрытия, не только на его концах.
+// Тултип — свой (не нативный `title`): в WebView нативные тултипы на
+// маленьких абсолютно позиционированных точках срабатывали ненадёжно.
 export function TimelineChart({ summary, onHoverPerson }: TimelineChartProps) {
+  const [tooltip, setTooltip] = useState<DotTooltip | null>(null);
   const [min, max] = computeDomain(summary);
   const x = (ts: number) => pctOf(ts, min, max);
   const ticks = yearTicks(min, max);
@@ -101,10 +113,13 @@ export function TimelineChart({ summary, onHoverPerson }: TimelineChartProps) {
         <span className={styles.groupEventsLabel}>события группы ↓</span>
       </div>
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={styles.compositionSvg}>
-        <polyline points={compositionStepPoints(summary, min, max)} className={styles.compositionLine} />
+        <polyline
+          points={compositionStepPoints(summary, min, max)}
+          className={styles.compositionLine}
+        />
       </svg>
 
-      <div className={styles.plot}>
+      <div className={styles.plot} onMouseLeave={() => setTooltip(null)}>
         <div className={styles.groupEventsRow}>
           <div className={styles.groupEventsAxis} />
           {summary.group_events.map((e, i) => (
@@ -112,7 +127,14 @@ export function TimelineChart({ summary, onHoverPerson }: TimelineChartProps) {
               key={i}
               className={styles.groupDot}
               style={{ left: `${x(e.ts)}%` }}
-              title={`${GROUP_EVENT_LABELS[e.kind]}${e.detail ? ` → «${e.detail}»` : ""} · ${formatFullDateTime(e.ts)}`}
+              onMouseEnter={() =>
+                setTooltip({
+                  leftPct: x(e.ts),
+                  title:
+                    GROUP_EVENT_LABELS[e.kind] + (e.detail ? ` → «${e.detail}»` : ""),
+                  date: formatFullDateTime(e.ts),
+                })
+              }
             />
           ))}
         </div>
@@ -151,27 +173,38 @@ export function TimelineChart({ summary, onHoverPerson }: TimelineChartProps) {
                           background: color,
                         }}
                       />
-                      {seg.start_kind === "joined" && (
-                        <span
-                          className={styles.personDot}
-                          style={{ left: `${segStartPct}%`, borderColor: color, background: color }}
-                          title={`${name} — вход · ${formatFullDateTime(seg.start_ts)}`}
-                        />
-                      )}
-                      {seg.end_ts != null && (
-                        <span
-                          className={styles.personDot}
-                          style={{ left: `${segEndPct}%`, borderColor: color }}
-                          title={`${name} — ${seg.end_kind === "left" ? "выход" : "удаление"} · ${formatFullDateTime(seg.end_ts)}`}
-                        />
-                      )}
                     </div>
                   );
                 })}
+                {person.events.map((e, ei) => (
+                  <span
+                    key={ei}
+                    className={styles.personDot}
+                    style={{
+                      left: `${x(e.ts)}%`,
+                      borderColor: color,
+                      background: e.kind === "joined" ? color : "var(--surface)",
+                    }}
+                    onMouseEnter={() =>
+                      setTooltip({
+                        leftPct: x(e.ts),
+                        title: `${name} — ${PERSON_EVENT_LABELS[e.kind] ?? e.kind}`,
+                        date: formatFullDateTime(e.ts),
+                      })
+                    }
+                  />
+                ))}
               </div>
             );
           })}
         </div>
+
+        {tooltip && (
+          <div className={styles.tooltip} style={{ left: `${tooltip.leftPct}%` }}>
+            <div className={styles.tooltipTitle}>{tooltip.title}</div>
+            <div className={styles.tooltipDate}>{tooltip.date}</div>
+          </div>
+        )}
       </div>
 
       <div className={styles.yearAxis}>

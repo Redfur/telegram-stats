@@ -9,8 +9,7 @@ use telegram_stats_lib::metrics::{
     get_activity_series, get_chat_totals, get_message_type_detail, get_message_type_overview,
     get_participant_timeline, get_reaction_person_breakdown, get_reactions_overview,
     get_top_participants, get_top_reacted_messages, granularity::pick_granularity, MessageTypeKind,
-    MessageTypeSummaryStats, ReactionsOverview, SegmentEndKind, SegmentStartKind, TimelineOverview,
-    TypeTimeView,
+    MessageTypeSummaryStats, ReactionsOverview, TimelineOverview, TypeTimeView,
 };
 
 fn people_ordered_by_name(conn: &Connection, chat_id: i64) -> Vec<db::PersonRow> {
@@ -67,6 +66,10 @@ fn fresh_db() -> Connection {
         "../src/db/migrations/0012_timeline_indexes.sql"
     ))
     .expect("apply migration 0012");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0013_person_fk_indexes.sql"
+    ))
+    .expect("apply migration 0013");
     conn
 }
 
@@ -1657,10 +1660,13 @@ fn participant_timeline_reports_founder_invitees_and_a_removal() {
         .find(|p| p.person_id == anya.id)
         .expect("Аня must have a timeline row");
     assert_eq!(anya_row.segments.len(), 1);
-    assert!(matches!(
-        anya_row.segments[0].start_kind,
-        SegmentStartKind::Joined
-    ));
+    assert!(
+        anya_row
+            .events
+            .iter()
+            .any(|e| e.kind == "joined" && e.ts == anya_row.segments[0].start_ts),
+        "a resolved join event must exist at the segment's start"
+    );
     assert!(
         anya_row.segments[0].end_ts.is_none(),
         "Аня was never removed or reported as leaving"
@@ -1673,16 +1679,81 @@ fn participant_timeline_reports_founder_invitees_and_a_removal() {
         .expect("Жора must have a timeline row");
     assert_eq!(zhora_row.segments.len(), 1);
     assert!(
-        matches!(
-            zhora_row.segments[0].start_kind,
-            SegmentStartKind::SinceStart
-        ),
-        "Жора has no recorded join event in this fixture"
+        !zhora_row
+            .events
+            .iter()
+            .any(|e| e.kind == "joined" && e.ts == zhora_row.segments[0].start_ts),
+        "Жора has no recorded join event in this fixture — segment must start from his first message, not a fabricated join"
     );
-    assert!(matches!(
-        zhora_row.segments[0].end_kind,
-        Some(SegmentEndKind::Removed)
-    ));
+    assert!(
+        zhora_row
+            .events
+            .iter()
+            .any(|e| e.kind == "removed" && Some(e.ts) == zhora_row.segments[0].end_ts),
+        "a resolved removal event must exist at the segment's end"
+    );
+}
+
+#[test]
+fn merged_accounts_produce_one_continuous_timeline_row() {
+    // Жора (только сообщения, без входа, "removed" в конце) сливается в
+    // Аню (founder, "joined" на create_group, всё ещё в чате). После
+    // merge_people оба набора событий должны оказаться на одной строке
+    // Ани, и поскольку Аня всё это время оставалась в чате, покрытие не
+    // должно рваться на моменте выхода Жоры — линия непрерывная, хотя
+    // событие "removed" остаётся видно в events.
+    let mut conn = fresh_db();
+    let chat = import(&mut conn, "group_50_members.json");
+    let people = people_ordered_by_name(&conn, chat.id);
+    let anya = people
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Аня"))
+        .unwrap();
+    let zhora = people
+        .iter()
+        .find(|p| p.display_name.as_deref() == Some("Жора"))
+        .unwrap();
+
+    db::merge_people(&conn, chat.id, anya.id, &[zhora.id]).unwrap();
+
+    let overview = get_participant_timeline(&conn, chat.id).unwrap();
+    let TimelineOverview::Available(summary) = overview else {
+        panic!("must still be available after a merge");
+    };
+
+    assert_eq!(
+        summary.total, 49,
+        "Жора is absorbed into Аня, not a separate person anymore"
+    );
+    assert_eq!(
+        summary.left, 0,
+        "the merged identity's coverage is continuous and still open — nobody counts as having left"
+    );
+    assert_eq!(summary.current, 49);
+
+    assert!(
+        !summary.people.iter().any(|p| p.person_id == zhora.id),
+        "Жора's old id must not appear as its own row after being merged"
+    );
+    let anya_row = summary
+        .people
+        .iter()
+        .find(|p| p.person_id == anya.id)
+        .expect("Аня must still have a timeline row");
+    assert_eq!(
+        anya_row.segments.len(),
+        1,
+        "one continuous segment, not a gap at Жора's removal"
+    );
+    assert!(anya_row.segments[0].end_ts.is_none(), "must still be open");
+    assert!(
+        anya_row.events.iter().any(|e| e.kind == "joined"),
+        "Аня's own join event must still be visible as a marker"
+    );
+    assert!(
+        anya_row.events.iter().any(|e| e.kind == "removed"),
+        "Жора's removal event must still be visible as a marker, even though it no longer breaks the line"
+    );
 }
 
 #[test]

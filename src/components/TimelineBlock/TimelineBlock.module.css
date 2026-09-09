@@ -50,8 +50,13 @@
 .headerRight {
   flex: 1;
   min-width: 0;
+  min-height: 40px;
   border-left: var(--border-w) solid var(--border-soft);
   padding-left: var(--sp-6);
+  /* Капсула наведённого участника и сводка из трёх показателей должны
+     занимать одну и ту же высоту — иначе переключение по hover сдвигает
+     весь блок под курсором (строка уезжает, mouseleave/mouseenter
+     срабатывают снова и снова, содержимое дёргается). */
 }
 
 .headerStats {
@@ -154,6 +159,38 @@
 .plot {
   position: relative;
   margin-top: var(--sp-4);
+}
+
+/* Свой тултип, не нативный `title` — в WebView нативные тултипы на
+   маленьких абсолютно позиционированных точках срабатывали ненадёжно
+   (не показывались/дёргали скролл). Висит над всем графиком в одной
+   и той же вертикальной позиции независимо от того, какая точка навела
+   — так проще и не требует отслеживать номер строки. */
+.tooltip {
+  position: absolute;
+  top: -6px;
+  transform: translate(-50%, -100%);
+  z-index: 6;
+  pointer-events: none;
+  min-width: 150px;
+  max-width: 260px;
+  background: var(--surface-raised);
+  border: var(--border-w) solid var(--accent);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.tooltipTitle {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.tooltipDate {
+  margin-top: var(--sp-1);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 .groupEventsRow {

@@ -725,9 +725,20 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                         params![display_name, old_person_id],
                     )
                     .map_err(db_err)?;
+                    // `AND chat_id = ?3` — не просто уточнение, а обязательное
+                    // условие для производительности: `messages` не имеет
+                    // отдельного индекса на голый `person_id` (только
+                    // составной `(chat_id, person_id)`, бесполезный без
+                    // ведущего `chat_id`), а `person_id` здесь и так уникален
+                    // только в границах чата. Без этого условия SQLite не
+                    // может использовать индекс и гоняет скан `messages`
+                    // ВСЕХ чатов в базе на каждого участника — на чате с
+                    // тысячами участников превращало реконсиляцию переимпорта
+                    // в многоминутное подвисание без ошибки (найдено на
+                    // реальном использовании).
                     tx.execute(
-                        "UPDATE messages SET person_id = ?1 WHERE person_id = ?2",
-                        params![target_id, new_person_id],
+                        "UPDATE messages SET person_id = ?1 WHERE person_id = ?2 AND chat_id = ?3",
+                        params![target_id, new_person_id, chat_id],
                     )
                     .map_err(db_err)?;
                     tx.execute(

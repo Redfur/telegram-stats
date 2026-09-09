@@ -219,21 +219,34 @@ export interface TimelineGroupEvent {
   detail: string | null;
 }
 
-export type TimelineSegmentStartKind = "joined" | "since_start";
-export type TimelineSegmentEndKind = "left" | "removed";
-
+// Отрезок непрерывного присутствия — объединение покрытия по всем
+// аккаунтам, объединённым в этого участника (merge_people), не строгое
+// чередование вход/выход одного аккаунта. `start_ts` для самого раннего
+// сегмента может быть моментом первого наблюдения (первое сообщение), а
+// не резолвленным входом — отличить такой случай можно по отсутствию
+// совпадающей по времени точки в `PersonTimelineRow.events`.
 export interface TimelineSegment {
   start_ts: number;
-  start_kind: TimelineSegmentStartKind;
   end_ts: number | null;
-  end_kind: TimelineSegmentEndKind | null;
+}
+
+export type TimelinePersonEventKind = "joined" | "left" | "removed";
+
+// Сырое разрешённое событие — рисуется точкой на линии независимо от
+// того, сдвигает ли оно границу сегмента (у объединённых аккаунтов
+// событие может лежать внутри уже непрерывного покрытия).
+export interface TimelinePersonEvent {
+  ts: number;
+  kind: TimelinePersonEventKind;
 }
 
 export interface PersonTimelineRow {
   person_id: number;
   display_name: string | null;
-  /** Обычно один элемент; больше одного — участник выходил и возвращался. */
+  /** Обычно один элемент; больше одного — реальный промежуток отсутствия. */
   segments: TimelineSegment[];
+  /** Все события этого участника (по всем объединённым аккаунтам), по времени. */
+  events: TimelinePersonEvent[];
 }
 
 export interface TimelineSummary {
