@@ -105,36 +105,16 @@ pub enum TimelineOverview {
 }
 
 /// Отрезки непрерывного присутствия из уже отсортированных по времени
-/// событий одного участника (`joined`/`left`/`removed`) — объединение
-/// покрытия, а не строгое чередование: считает активные "источники
-/// присутствия" счётчиком (объединённые `merge_people` аккаунты могут
-/// перекрываться во времени), сегмент закрывается только когда счётчик
-/// возвращается к нулю. Так выход одного объединённого аккаунта, пока
-/// другой ещё состоял в чате, не рвёт линию — ровно то же самое, что
-/// делает `compositionStepPoints` на фронте для чата целиком, только на
-/// уровне одного человека.
-///
-/// `first_message_ts` — если оно раньше первого события (или событий нет
-/// вовсе), участник уже присутствовал на момент первого наблюдения —
-/// сегмент открывается с этого момента без выдуманной даты входа
-/// (docs/SPEC.md §7); реальные события всё равно видны отдельно в
-/// `PersonTimelineRow.events`, поэтому такой "тихий" старт не теряет
-/// информацию, только не изобретает её.
-fn build_coverage_segments(evs: &[(i64, String)], first_message_ts: Option<i64>) -> Vec<Segment> {
-    let implicit_start = match (first_message_ts, evs.first()) {
-        (Some(fm), Some((first_ev_ts, _))) if fm < *first_ev_ts => Some(fm),
-        (Some(fm), None) => Some(fm),
-        _ => None,
-    };
-
+/// событий ОДНОГО сырого аккаунта (`joined`/`left`/`removed`) — чистое
+/// спаривание входов/выходов этого конкретного аккаунта, без каких-либо
+/// допущений про сообщения (те учитываются отдельно, на уровне
+/// объединённой идентичности — см. `get_participant_timeline`, где
+/// сегменты нескольких аккаунтов одного человека и активность по
+/// сообщениям сводятся вместе через `union_segments`).
+fn build_coverage_segments(evs: &[(i64, String)]) -> Vec<Segment> {
     let mut coverage: i64 = 0;
     let mut current_start: Option<i64> = None;
     let mut segments: Vec<Segment> = Vec::new();
-
-    if let Some(start_ts) = implicit_start {
-        coverage = 1;
-        current_start = Some(start_ts);
-    }
 
     for (ts, kind) in evs {
         if kind == "joined" {
@@ -164,18 +144,6 @@ fn build_coverage_segments(evs: &[(i64, String)], first_message_ts: Option<i64>)
             segments.push(Segment {
                 start_ts: start,
                 end_ts: None,
-            });
-        }
-    }
-
-    if segments.is_empty() {
-        // Ни одного входа не нашлось (только выход/удаление без
-        // предшествующего входа и без сообщений вообще) — вырожденный
-        // случай, точечный сегмент на месте события, а не пустая строка.
-        if let Some((ts, _)) = evs.first() {
-            segments.push(Segment {
-                start_ts: *ts,
-                end_ts: Some(*ts),
             });
         }
     }
@@ -227,6 +195,64 @@ fn union_segments(segments: &[Segment]) -> Vec<Segment> {
         }
     }
     merged
+}
+
+/// Сводит сегменты явных событий (по всем бывшим аккаунтам одного
+/// человека) и отрезок активности по сообщениям (`message_span` —
+/// присутствие доказано самим фактом сообщения, см. вызывающий код) в
+/// финальный список сегментов одной эффективной идентичности.
+///
+/// Финальная граница определяется явно, а не тем, что случайно получится
+/// из `union_segments` (тот мог посчитать короче — сегмент событий одного
+/// аккаунта без пары, например голое `removed` без своего `joined`,
+/// сам по себе не образует сегмента вообще, см. `build_coverage_segments`,
+/// и остаётся не более чем "точкой" в `message_span`):
+/// - Есть выход (`latest_close_ts`) не раньше последнего сообщения —
+///   легитимный, финальная граница = именно этот выход, а не последнее
+///   сообщение.
+/// - Выхода нет вовсе, либо он раньше последнего сообщения — переписка
+///   продолжилась уже после «выхода» (типичный признак объединённого
+///   `merge_people` аккаунта-приёмника, оставшегося в чате, пока другой
+///   формально вышел) — сегмент открыт.
+fn finalize_person_segments(
+    mut per_account_segments: Vec<Segment>,
+    message_span: Option<(i64, i64)>,
+    latest_close_ts: Option<i64>,
+    earliest_event_ts: Option<i64>,
+) -> Vec<Segment> {
+    if let Some((first, last)) = message_span {
+        per_account_segments.push(Segment {
+            start_ts: first,
+            end_ts: Some(last),
+        });
+    }
+
+    let mut segments = union_segments(&per_account_segments);
+
+    if segments.is_empty() {
+        // Ни одного входа/сообщения не нашлось для покрытия — только
+        // несопоставленный выход/удаление без пары. Вырожденный случай:
+        // точечный сегмент на месте самого раннего сырого события, а не
+        // пустая строка.
+        if let Some(ts) = earliest_event_ts {
+            segments.push(Segment {
+                start_ts: ts,
+                end_ts: Some(ts),
+            });
+        }
+        return segments;
+    }
+
+    if let Some((_, last)) = message_span {
+        if let Some(last_seg) = segments.last_mut() {
+            last_seg.end_ts = match latest_close_ts {
+                Some(close_ts) if close_ts >= last => Some(close_ts),
+                _ => None,
+            };
+        }
+    }
+
+    segments
 }
 
 fn median(values: &mut [f64]) -> Option<f64> {
@@ -319,22 +345,34 @@ pub fn get_participant_timeline(
             .push(raw_pid);
     }
 
-    let mut first_message_ts: HashMap<i64, i64> = HashMap::new();
+    // Сообщения — прямое доказательство присутствия (человек не мог
+    // писать, не будучи в чате), не только точка отсчёта для "тихого"
+    // старта: после `merge_people` узнать, кто из объединённых аккаунтов
+    // отправил какое сообщение, уже нельзя (`messages.person_id`
+    // репойнтится на `primary_id` необратимо), поэтому весь диапазон
+    // [первое; последнее] сообщение по эффективной идентичности
+    // добавляется как ещё один источник покрытия наравне с явными
+    // событиями каждого аккаунта — см. цикл ниже.
+    let mut message_span: HashMap<i64, (i64, i64)> = HashMap::new();
     {
         let mut stmt = conn.prepare(
-            "SELECT person_id, MIN(ts) FROM messages \
+            "SELECT person_id, MIN(ts), MAX(ts) FROM messages \
              WHERE chat_id = ?1 AND person_id IS NOT NULL GROUP BY person_id",
         )?;
         let rows = stmt.query_map(params![chat_id], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
         })?;
         for r in rows {
-            let (pid, ts) = r?;
-            first_message_ts.insert(pid, ts);
+            let (pid, first, last) = r?;
+            message_span.insert(pid, (first, last));
         }
     }
 
-    let mut candidate_ids: HashSet<i64> = first_message_ts.keys().copied().collect();
+    let mut candidate_ids: HashSet<i64> = message_span.keys().copied().collect();
     candidate_ids.extend(raws_by_effective.keys().copied());
 
     // Живые (не объединённые, не скрытые) люди чата — тот же фильтр, что
@@ -368,12 +406,12 @@ pub fn get_participant_timeline(
     for pid in candidate_ids {
         // Один эффективный участник может стоять за несколькими сырыми
         // аккаунтами (merge_people) — считаем покрытие для каждого
-        // отдельно (только у самого `pid`, то есть аккаунта-приёмника,
-        // есть право на `since_start`-допущение по объединённому первому
-        // сообщению; у слитых аккаунтов без собственного входа это
-        // допущение неприменимо — их собственная история сообщений уже
-        // неразличима после переноса `messages.person_id`), затем
-        // объединяем интервалы и сырые события в одну строку.
+        // аккаунта отдельно по его собственным явным событиям
+        // (build_coverage_segments — чистое спаривание, без допущений),
+        // добавляем один общий отрезок активности по сообщениям
+        // (message_span — присутствие доказано самим фактом сообщения,
+        // не зависит от того, у какого из объединённых аккаунтов есть
+        // события), и объединяем всё через union_segments.
         let raw_ids = raws_by_effective.get(&pid).cloned().unwrap_or_default();
         let mut per_account_segments: Vec<Segment> = Vec::new();
         let mut events: Vec<PersonEvent> = Vec::new();
@@ -385,22 +423,23 @@ pub fn get_participant_timeline(
                 ts: *ts,
                 kind: kind.clone(),
             }));
-            let since_start_ts = if *raw_pid == pid {
-                first_message_ts.get(&pid).copied()
-            } else {
-                None
-            };
-            per_account_segments.extend(build_coverage_segments(&evs, since_start_ts));
-        }
-        if raw_ids.is_empty() {
-            // Ни одного зафиксированного события вообще — участник виден
-            // только по сообщениям (тот же since_start, что и раньше).
-            per_account_segments =
-                build_coverage_segments(&[], first_message_ts.get(&pid).copied());
+            per_account_segments.extend(build_coverage_segments(&evs));
         }
         events.sort_by_key(|e| e.ts);
 
-        let segments = union_segments(&per_account_segments);
+        let span = message_span.get(&pid).copied();
+        let latest_close_ts = events
+            .iter()
+            .filter(|e| e.kind != "joined")
+            .map(|e| e.ts)
+            .max();
+        let earliest_event_ts = events.first().map(|e| e.ts);
+        let segments = finalize_person_segments(
+            per_account_segments,
+            span,
+            latest_close_ts,
+            earliest_event_ts,
+        );
 
         for seg in &segments {
             composition_events.push((seg.start_ts, 1));
@@ -532,7 +571,7 @@ mod tests {
         // merge_people): вошёл в 500 — реальный промежуток без
         // присутствия между 200 и 500, разрыв должен остаться.
         let evs = vec![ev(100, "joined"), ev(200, "left"), ev(500, "joined")];
-        let segments = build_coverage_segments(&evs, None);
+        let segments = build_coverage_segments(&evs);
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].start_ts, 100);
         assert_eq!(segments[0].end_ts, Some(200));
@@ -552,7 +591,7 @@ mod tests {
             ev(300, "left"),
             ev(400, "left"),
         ];
-        let segments = build_coverage_segments(&evs, None);
+        let segments = build_coverage_segments(&evs);
         assert_eq!(
             segments.len(),
             1,
@@ -563,19 +602,56 @@ mod tests {
     }
 
     #[test]
-    fn since_start_fallback_when_first_message_predates_any_event() {
-        let evs = vec![ev(200, "removed")];
-        let segments = build_coverage_segments(&evs, Some(50));
-        assert_eq!(segments.len(), 1);
-        assert_eq!(
-            segments[0].start_ts, 50,
-            "must start from the first observed message, not the removal event"
-        );
-        assert_eq!(segments[0].end_ts, Some(200));
+    fn no_events_never_panics() {
+        assert_eq!(build_coverage_segments(&[]).len(), 0);
     }
 
     #[test]
-    fn no_events_and_no_messages_never_panics() {
-        assert_eq!(build_coverage_segments(&[], None).len(), 0);
+    fn finalize_reopens_when_messages_continue_past_a_merged_accounts_departure() {
+        // Аккаунт A (слитый): joined@100, removed@200. Аккаунт-приёмник
+        // не имеет собственных событий, но сообщения (уже объединённые в
+        // message_span, так как messages.person_id репойнтится при
+        // merge_people) продолжаются вплоть до 900 — значит человек
+        // (под каким-то из объединённых аккаунтов) всё ещё в чате, и
+        // "removed" аккаунта A не должен обрывать линию.
+        let per_account = vec![Segment {
+            start_ts: 100,
+            end_ts: Some(200),
+        }];
+        let segments =
+            finalize_person_segments(per_account, Some((150, 900)), Some(200), Some(100));
+        assert_eq!(
+            segments.len(),
+            1,
+            "message activity must bridge the gap left by the merged account's departure"
+        );
+        assert_eq!(segments[0].start_ts, 100);
+        assert!(
+            segments[0].end_ts.is_none(),
+            "no evidence of departure after the last message — must stay open"
+        );
+    }
+
+    #[test]
+    fn finalize_keeps_a_legitimate_close_after_the_last_message() {
+        // Обычный (не объединённый) участник: joined@100, left@500,
+        // сообщения все до 400 (до выхода) — закрытие легитимно, линия
+        // должна остаться закрытой ровно на месте выхода.
+        let per_account = vec![Segment {
+            start_ts: 100,
+            end_ts: Some(500),
+        }];
+        let segments =
+            finalize_person_segments(per_account, Some((120, 400)), Some(500), Some(100));
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].end_ts, Some(500));
+    }
+
+    #[test]
+    fn finalize_falls_back_to_a_point_segment_with_no_coverage_at_all() {
+        let segments = finalize_person_segments(vec![], None, None, Some(777));
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].start_ts, 777);
+        assert_eq!(segments[0].end_ts, Some(777));
     }
 }

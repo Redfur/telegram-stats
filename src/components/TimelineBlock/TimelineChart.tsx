@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { formatFullDateTime } from "../../lib/formatMessageTimestamp";
 import { seriesColorVar } from "./timelineColors";
 import type { PersonTimelineRow, TimelineGroupEventKind, TimelineSummary } from "../../lib/types";
@@ -22,10 +22,31 @@ const PERSON_EVENT_LABELS: Record<string, string> = {
   removed: "удаление",
 };
 
+// Точка, к которой привязан открытый тултип — определяет, в какой
+// строке его рендерить (см. TimelineChart ниже), чтобы позиция была
+// относительно конкретной точки, а не общая "сверху таймлайна".
+type TooltipAnchor = { type: "group" } | { type: "person"; personId: number };
+
 interface DotTooltip {
+  anchor: TooltipAnchor;
   leftPct: number;
   title: string;
   date: string;
+}
+
+// Тултип наведения скрывается с небольшой задержкой (не мгновенно на
+// mouseleave точки) — курсору нужно время долететь до самого тултипа,
+// если тот хочет его навести (тултип не pointer-events:none, см. CSS).
+const HIDE_DELAY_MS = 100;
+
+// Клэмп по горизонтали своей эвристикой на процентах (без замера
+// реальной геометрии DOM — весь чарт и так в процентах): точка близко к
+// левому/правому краю блока прижимает тултип соответствующим краем к
+// точке вместо центрирования, чтобы не обрезалось сайдбаром/окном.
+function tooltipTransform(leftPct: number): string {
+  if (leftPct < 12) return "translate(0, -100%)";
+  if (leftPct > 88) return "translate(-100%, -100%)";
+  return "translate(-50%, -100%)";
 }
 
 // Общий диапазон времени для всех слоёв графика (композиция, лента
@@ -88,6 +109,11 @@ function compositionStepPoints(summary: TimelineSummary, min: number, max: numbe
   return out.join(" ");
 }
 
+function anchorsMatch(a: TooltipAnchor, b: TooltipAnchor): boolean {
+  if (a.type !== b.type) return false;
+  return a.type === "person" && b.type === "person" ? a.personId === b.personId : true;
+}
+
 // Тело блока — композиция сверху, лента групповых событий, строки
 // участников (сегменты — сплошные, промежутки между выходом и повторным
 // входом — пунктир), годовые метки снизу. Позиционирование — проценты от
@@ -98,12 +124,48 @@ function compositionStepPoints(summary: TimelineSummary, min: number, max: numbe
 // может лежать внутри уже непрерывного покрытия, не только на его концах.
 // Тултип — свой (не нативный `title`): в WebView нативные тултипы на
 // маленьких абсолютно позиционированных точках срабатывали ненадёжно.
+// Рендерится внутри той строки, к которой относится точка (не общим
+// плавающим блоком) — так позиция по вертикали не требует ручного
+// расчёта и автоматически верна для любой строки.
 export function TimelineChart({ summary, onHoverPerson }: TimelineChartProps) {
   const [tooltip, setTooltip] = useState<DotTooltip | null>(null);
+  const hideTimer = useRef<number | null>(null);
   const [min, max] = computeDomain(summary);
   const x = (ts: number) => pctOf(ts, min, max);
   const ticks = yearTicks(min, max);
   const peakCount = Math.max(1, ...summary.composition.map((p) => p.count));
+
+  const cancelHide = () => {
+    if (hideTimer.current != null) {
+      window.clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  };
+  const showTooltip = (next: DotTooltip) => {
+    cancelHide();
+    setTooltip(next);
+  };
+  const scheduleHide = () => {
+    cancelHide();
+    hideTimer.current = window.setTimeout(() => {
+      setTooltip(null);
+      hideTimer.current = null;
+    }, HIDE_DELAY_MS);
+  };
+
+  const renderTooltip = (anchor: TooltipAnchor) =>
+    tooltip &&
+    anchorsMatch(tooltip.anchor, anchor) && (
+      <div
+        className={styles.tooltip}
+        style={{ left: `${tooltip.leftPct}%`, transform: tooltipTransform(tooltip.leftPct) }}
+        onMouseEnter={cancelHide}
+        onMouseLeave={() => setTooltip(null)}
+      >
+        <div className={styles.tooltipTitle}>{tooltip.title}</div>
+        <div className={styles.tooltipDate}>{tooltip.date}</div>
+      </div>
+    );
 
   return (
     <div className={styles.chart}>
@@ -119,7 +181,7 @@ export function TimelineChart({ summary, onHoverPerson }: TimelineChartProps) {
         />
       </svg>
 
-      <div className={styles.plot} onMouseLeave={() => setTooltip(null)}>
+      <div className={styles.plot}>
         <div className={styles.groupEventsRow}>
           <div className={styles.groupEventsAxis} />
           {summary.group_events.map((e, i) => (
@@ -128,15 +190,17 @@ export function TimelineChart({ summary, onHoverPerson }: TimelineChartProps) {
               className={styles.groupDot}
               style={{ left: `${x(e.ts)}%` }}
               onMouseEnter={() =>
-                setTooltip({
+                showTooltip({
+                  anchor: { type: "group" },
                   leftPct: x(e.ts),
-                  title:
-                    GROUP_EVENT_LABELS[e.kind] + (e.detail ? ` → «${e.detail}»` : ""),
+                  title: GROUP_EVENT_LABELS[e.kind] + (e.detail ? ` → «${e.detail}»` : ""),
                   date: formatFullDateTime(e.ts),
                 })
               }
+              onMouseLeave={scheduleHide}
             />
           ))}
+          {renderTooltip({ type: "group" })}
         </div>
 
         <div className={styles.rows}>
@@ -186,25 +250,21 @@ export function TimelineChart({ summary, onHoverPerson }: TimelineChartProps) {
                       background: e.kind === "joined" ? color : "var(--surface)",
                     }}
                     onMouseEnter={() =>
-                      setTooltip({
+                      showTooltip({
+                        anchor: { type: "person", personId: person.person_id },
                         leftPct: x(e.ts),
                         title: `${name} — ${PERSON_EVENT_LABELS[e.kind] ?? e.kind}`,
                         date: formatFullDateTime(e.ts),
                       })
                     }
+                    onMouseLeave={scheduleHide}
                   />
                 ))}
+                {renderTooltip({ type: "person", personId: person.person_id })}
               </div>
             );
           })}
         </div>
-
-        {tooltip && (
-          <div className={styles.tooltip} style={{ left: `${tooltip.leftPct}%` }}>
-            <div className={styles.tooltipTitle}>{tooltip.title}</div>
-            <div className={styles.tooltipDate}>{tooltip.date}</div>
-          </div>
-        )}
       </div>
 
       <div className={styles.yearAxis}>
