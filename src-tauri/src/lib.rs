@@ -63,6 +63,17 @@ fn import_error_to_string(err: ImportError) -> String {
     serde_json::to_string(&classify_import_error(&err)).unwrap_or_else(|_| err.to_string())
 }
 
+/// Единая точка логирования ошибок команд: без неё падение любой из
+/// полутора десятков команд (`.map_err(|e| e.to_string())?`) было видно
+/// только пользователю в UI, в лог-файл не попадало вообще ничего —
+/// значит, любая ошибка кроме самого импорта была недиагностируемой
+/// удалённо. Логируем WARN с именем команды, текст ошибки пользователю
+/// не меняется.
+fn cmd_err(cmd: &str, e: impl std::fmt::Display) -> String {
+    log::warn!("{cmd}: {e}");
+    e.to_string()
+}
+
 #[tauri::command]
 async fn import_chat(
     app: tauri::AppHandle,
@@ -75,7 +86,7 @@ async fn import_chat(
     let cancel_flag = cancel.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let started = Instant::now();
-        let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+        let file = std::fs::File::open(&path).map_err(|e| cmd_err("import_chat", e))?;
         let source_file_size = file.metadata().ok().map(|m| m.len() as i64);
         log::info!("импорт: старт «{path}» ({source_file_size:?} байт)");
         let (counting, bytes_read) = CountingReader::new(std::io::BufReader::new(file));
@@ -92,7 +103,7 @@ async fn import_chat(
             }
         };
 
-        let mut conn = pool.get().map_err(|e| e.to_string())?;
+        let mut conn = pool.get().map_err(|e| cmd_err("import_chat", e))?;
         let mut ctx = ImportContext {
             bytes_read: &bytes_read,
             on_progress,
@@ -124,20 +135,21 @@ fn cancel_import(cancel: tauri::State<'_, ImportCancelFlag>) {
 
 #[tauri::command]
 fn list_chats(db: tauri::State<'_, Db>) -> Result<Vec<ChatSummary>, String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    db::list_chats(&conn).map_err(|e| e.to_string())
+    let conn = db.0.get().map_err(|e| cmd_err("list_chats", e))?;
+    db::list_chats(&conn).map_err(|e| cmd_err("list_chats", e))
 }
 
 #[tauri::command]
 fn delete_chat(db: tauri::State<'_, Db>, chat_id: i64) -> Result<(), String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    db::delete_chat(&conn, chat_id).map_err(|e| e.to_string())
+    log::info!("delete_chat: chat_id={chat_id}");
+    let conn = db.0.get().map_err(|e| cmd_err("delete_chat", e))?;
+    db::delete_chat(&conn, chat_id).map_err(|e| cmd_err("delete_chat", e))
 }
 
 #[tauri::command]
 fn get_people(db: tauri::State<'_, Db>, chat_id: i64) -> Result<Vec<PersonRow>, String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    db::get_people(&conn, chat_id).map_err(|e| e.to_string())
+    let conn = db.0.get().map_err(|e| cmd_err("get_people", e))?;
+    db::get_people(&conn, chat_id).map_err(|e| cmd_err("get_people", e))
 }
 
 #[tauri::command]
@@ -147,8 +159,9 @@ fn merge_people(
     primary_id: i64,
     other_ids: Vec<i64>,
 ) -> Result<(), String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    db::merge_people(&conn, chat_id, primary_id, &other_ids).map_err(|e| e.to_string())
+    log::info!("merge_people: chat_id={chat_id} primary_id={primary_id} other_ids={other_ids:?}");
+    let conn = db.0.get().map_err(|e| cmd_err("merge_people", e))?;
+    db::merge_people(&conn, chat_id, primary_id, &other_ids).map_err(|e| cmd_err("merge_people", e))
 }
 
 #[tauri::command]
@@ -158,8 +171,9 @@ fn hide_person(
     person_id: i64,
     hidden: bool,
 ) -> Result<(), String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    db::hide_person(&conn, chat_id, person_id, hidden).map_err(|e| e.to_string())
+    log::info!("hide_person: chat_id={chat_id} person_id={person_id} hidden={hidden}");
+    let conn = db.0.get().map_err(|e| cmd_err("hide_person", e))?;
+    db::hide_person(&conn, chat_id, person_id, hidden).map_err(|e| cmd_err("hide_person", e))
 }
 
 #[tauri::command]
@@ -169,14 +183,17 @@ fn rename_person(
     person_id: i64,
     display_name: String,
 ) -> Result<(), String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    db::rename_person(&conn, chat_id, person_id, &display_name).map_err(|e| e.to_string())
+    // Без самого имени — это текст, введённый пользователем, не техническая деталь для лога.
+    log::info!("rename_person: chat_id={chat_id} person_id={person_id}");
+    let conn = db.0.get().map_err(|e| cmd_err("rename_person", e))?;
+    db::rename_person(&conn, chat_id, person_id, &display_name)
+        .map_err(|e| cmd_err("rename_person", e))
 }
 
 #[tauri::command]
 fn get_chat_totals(db: tauri::State<'_, Db>, chat_id: i64) -> Result<Option<ChatTotals>, String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    metrics::get_chat_totals(&conn, chat_id).map_err(|e| e.to_string())
+    let conn = db.0.get().map_err(|e| cmd_err("get_chat_totals", e))?;
+    metrics::get_chat_totals(&conn, chat_id).map_err(|e| cmd_err("get_chat_totals", e))
 }
 
 #[tauri::command]
@@ -184,14 +201,14 @@ fn get_activity_series(
     db: tauri::State<'_, Db>,
     chat_id: i64,
 ) -> Result<Option<ActivitySeries>, String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    metrics::get_activity_series(&conn, chat_id).map_err(|e| e.to_string())
+    let conn = db.0.get().map_err(|e| cmd_err("get_activity_series", e))?;
+    metrics::get_activity_series(&conn, chat_id).map_err(|e| cmd_err("get_activity_series", e))
 }
 
 #[tauri::command]
 fn get_top_participants(db: tauri::State<'_, Db>, chat_id: i64) -> Result<TopParticipants, String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    metrics::get_top_participants(&conn, chat_id).map_err(|e| e.to_string())
+    let conn = db.0.get().map_err(|e| cmd_err("get_top_participants", e))?;
+    metrics::get_top_participants(&conn, chat_id).map_err(|e| cmd_err("get_top_participants", e))
 }
 
 #[tauri::command]
@@ -199,8 +216,11 @@ fn get_message_type_overview(
     db: tauri::State<'_, Db>,
     chat_id: i64,
 ) -> Result<MessageTypeOverview, String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    metrics::get_message_type_overview(&conn, chat_id).map_err(|e| e.to_string())
+    let conn =
+        db.0.get()
+            .map_err(|e| cmd_err("get_message_type_overview", e))?;
+    metrics::get_message_type_overview(&conn, chat_id)
+        .map_err(|e| cmd_err("get_message_type_overview", e))
 }
 
 #[tauri::command]
@@ -210,8 +230,11 @@ fn get_message_type_detail(
     kind: MessageTypeKind,
     view: Option<TypeTimeView>,
 ) -> Result<Option<MessageTypeDetail>, String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    metrics::get_message_type_detail(&conn, chat_id, kind, view).map_err(|e| e.to_string())
+    let conn =
+        db.0.get()
+            .map_err(|e| cmd_err("get_message_type_detail", e))?;
+    metrics::get_message_type_detail(&conn, chat_id, kind, view)
+        .map_err(|e| cmd_err("get_message_type_detail", e))
 }
 
 #[tauri::command]
@@ -219,8 +242,11 @@ fn get_reactions_overview(
     db: tauri::State<'_, Db>,
     chat_id: i64,
 ) -> Result<ReactionsOverview, String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    metrics::get_reactions_overview(&conn, chat_id).map_err(|e| e.to_string())
+    let conn =
+        db.0.get()
+            .map_err(|e| cmd_err("get_reactions_overview", e))?;
+    metrics::get_reactions_overview(&conn, chat_id)
+        .map_err(|e| cmd_err("get_reactions_overview", e))
 }
 
 #[tauri::command]
@@ -228,8 +254,11 @@ fn get_top_reacted_messages(
     db: tauri::State<'_, Db>,
     chat_id: i64,
 ) -> Result<Vec<TopReactedMessage>, String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    metrics::get_top_reacted_messages(&conn, chat_id).map_err(|e| e.to_string())
+    let conn =
+        db.0.get()
+            .map_err(|e| cmd_err("get_top_reacted_messages", e))?;
+    metrics::get_top_reacted_messages(&conn, chat_id)
+        .map_err(|e| cmd_err("get_top_reacted_messages", e))
 }
 
 #[tauri::command]
@@ -238,8 +267,11 @@ fn get_reaction_person_breakdown(
     chat_id: i64,
     person_id: i64,
 ) -> Result<PersonReactionBreakdown, String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    metrics::get_reaction_person_breakdown(&conn, chat_id, person_id).map_err(|e| e.to_string())
+    let conn =
+        db.0.get()
+            .map_err(|e| cmd_err("get_reaction_person_breakdown", e))?;
+    metrics::get_reaction_person_breakdown(&conn, chat_id, person_id)
+        .map_err(|e| cmd_err("get_reaction_person_breakdown", e))
 }
 
 #[tauri::command]
@@ -247,12 +279,28 @@ fn get_participant_timeline(
     db: tauri::State<'_, Db>,
     chat_id: i64,
 ) -> Result<TimelineOverview, String> {
-    let conn = db.0.get().map_err(|e| e.to_string())?;
-    metrics::get_participant_timeline(&conn, chat_id).map_err(|e| e.to_string())
+    let conn =
+        db.0.get()
+            .map_err(|e| cmd_err("get_participant_timeline", e))?;
+    metrics::get_participant_timeline(&conn, chat_id)
+        .map_err(|e| cmd_err("get_participant_timeline", e))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Паника без этого хука видна только в stdout/stderr — у собранного
+    // .exe без консоли (см. build.yml/release.yml) это значит, что она
+    // просто исчезает без следа. Хук ставится до инициализации плагинов,
+    // но реально вызывается уже во время работы приложения, когда
+    // `tauri-plugin-log` (регистрируется ниже) — глобальный логгер `log`
+    // — уже подключён; исходный hook (печать в stderr, полезно под
+    // `pnpm tauri dev`) не убираем, а зовём следом.
+    let default_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("паника: {info}");
+        default_panic_hook(info);
+    }));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
