@@ -655,6 +655,22 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
             // него, а не наоборот, чтобы этот id пережил повторный импорт.
             tx.execute("DELETE FROM messages WHERE chat_id = ?1", params![old_id])
                 .map_err(db_err)?;
+            // membership_events/chat_events, в отличие от message_reactions/
+            // reaction_actors/message_reaction_previews, не каскадируют от
+            // messages (у них нет message_id вовсе) — стираем старые строки
+            // явно, иначе они остались бы лежать под old_id рядом со свежими
+            // (переехавшими с временного chat_id ниже) и задваивались бы на
+            // каждый повторный импорт.
+            tx.execute(
+                "DELETE FROM membership_events WHERE chat_id = ?1",
+                params![old_id],
+            )
+            .map_err(db_err)?;
+            tx.execute(
+                "DELETE FROM chat_events WHERE chat_id = ?1",
+                params![old_id],
+            )
+            .map_err(db_err)?;
 
             // people, в отличие от messages, не стираем и не перезаливаем
             // временные строки — merged_into/is_hidden/алиасы старых строк

@@ -63,6 +63,10 @@ fn fresh_db() -> Connection {
     .expect("apply migration 0010");
     conn.execute_batch(include_str!("../src/db/migrations/0011_timeline.sql"))
         .expect("apply migration 0011");
+    conn.execute_batch(include_str!(
+        "../src/db/migrations/0012_timeline_indexes.sql"
+    ))
+    .expect("apply migration 0012");
     conn
 }
 
@@ -1750,6 +1754,41 @@ fn participant_timeline_reports_needs_reimport_for_a_chat_imported_before_the_ti
     assert!(
         matches!(overview, TimelineOverview::NeedsReimport),
         "a chat that never went through the updated importer must ask for a re-import, not show empty/zero data"
+    );
+}
+
+#[test]
+fn reimporting_the_same_chat_does_not_duplicate_membership_and_chat_events() {
+    // Баг, найденный на реальном использовании: membership_events/
+    // chat_events не каскадируют от messages (нет message_id) и не
+    // стирались явно на переимпорт — старые строки оставались лежать под
+    // old_id рядом со свежими, задваиваясь на каждый повторный импорт.
+    let mut conn = fresh_db();
+    import(&mut conn, "group_50_members.json");
+    let second = import(&mut conn, "group_50_members.json");
+
+    let membership_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM membership_events WHERE chat_id = ?1",
+            params![second.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        membership_count, 11,
+        "must not double: founder + 9 invitees + Жора's removal, same as a single import"
+    );
+
+    let chat_event_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM chat_events WHERE chat_id = ?1",
+            params![second.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        chat_event_count, 3,
+        "must not double: created/photo/migrated"
     );
 }
 
