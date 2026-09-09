@@ -74,8 +74,10 @@ async fn import_chat(
     let pool = db.0.clone();
     let cancel_flag = cancel.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let started = Instant::now();
         let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
         let source_file_size = file.metadata().ok().map(|m| m.len() as i64);
+        log::info!("импорт: старт «{path}» ({source_file_size:?} байт)");
         let (counting, bytes_read) = CountingReader::new(std::io::BufReader::new(file));
 
         let mut last_emit = Instant::now();
@@ -96,8 +98,19 @@ async fn import_chat(
             on_progress,
             cancel: &cancel_flag,
         };
-        db::import_into_db(&mut conn, counting, &path, source_file_size, &mut ctx)
-            .map_err(import_error_to_string)
+        let result = db::import_into_db(&mut conn, counting, &path, source_file_size, &mut ctx);
+        match &result {
+            Ok(summary) => log::info!(
+                "импорт: готово «{path}», {} сообщений, {:.1?}",
+                summary.message_count,
+                started.elapsed()
+            ),
+            Err(e) => log::warn!(
+                "импорт: остановлен «{path}» за {:.1?}: {e}",
+                started.elapsed()
+            ),
+        }
+        result.map_err(import_error_to_string)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -105,6 +118,7 @@ async fn import_chat(
 
 #[tauri::command]
 fn cancel_import(cancel: tauri::State<'_, ImportCancelFlag>) {
+    log::info!("импорт: получен запрос на отмену");
     cancel.0.store(true, Ordering::Relaxed);
 }
 
@@ -242,10 +256,26 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: None,
+                    }),
+                ])
+                .build(),
+        )
         .setup(|app| {
             let app_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_dir)?;
             let db_path = app_dir.join("telegram-stats.sqlite3");
+            // Печатаем путь к файлу лога в stdout при старте — иначе его
+            // негде подсмотреть, кроме как знать конвенцию Tauri заранее
+            // (нужно пользователю, чтобы прислать лог зависшего импорта).
+            if let Ok(log_dir) = app.path().app_log_dir() {
+                println!("Лог приложения: {}", log_dir.display());
+            }
             // Миграции — один раз на отдельном соединении, до открытия
             // пула: PRAGMA user_version читается-пишется без гонки
             // нескольких соединений на пустой базе.

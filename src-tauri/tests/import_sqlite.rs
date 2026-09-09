@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use rusqlite::{params, Connection};
 use telegram_stats_lib::db::{self, import_into_db, ImportContext, ImportPhase, ImportProgress};
@@ -322,6 +322,50 @@ fn cancelling_mid_import_leaves_no_trace() {
     assert!(
         db::list_chats(&conn).unwrap().is_empty(),
         "a cancelled import must not commit a partial chat"
+    );
+}
+
+#[test]
+fn cancelling_reimport_during_finalizing_leaves_original_chat_untouched() {
+    // Отмена, нажатая уже после того как файл дочитан (реконсиляция
+    // участников/пересчёт метрик реимпорта — Finalizing), должна
+    // сработать так же честно, как отмена во время чтения: ни одна
+    // строка старого чата не должна пострадать, раз транзакция так и
+    // не закоммитилась.
+    let mut conn = fresh_db();
+    let original = import(&mut conn, "three_day_chat.json");
+
+    let bytes_read = AtomicU64::new(0);
+    let cancel = AtomicBool::new(false);
+    let on_progress = |p: ImportProgress| {
+        if p.phase == ImportPhase::Finalizing {
+            cancel.store(true, Ordering::Relaxed);
+        }
+    };
+    let mut ctx = ImportContext {
+        bytes_read: &bytes_read,
+        on_progress,
+        cancel: &cancel,
+    };
+
+    let file = File::open(fixture("three_day_chat.json")).expect("fixture file should exist");
+    let result = import_into_db(&mut conn, file, "three_day_chat.json", None, &mut ctx);
+
+    assert!(matches!(result, Err(ImportError::Cancelled)));
+
+    let chats = db::list_chats(&conn).unwrap();
+    assert_eq!(
+        chats.len(),
+        1,
+        "a cancelled reimport must not leave a stray temp chat row behind"
+    );
+    assert_eq!(
+        chats[0].id, original.id,
+        "the original chat must keep its id"
+    );
+    assert_eq!(
+        chats[0].message_count, original.message_count,
+        "a cancelled reimport must not partially overwrite the original chat's data"
     );
 }
 

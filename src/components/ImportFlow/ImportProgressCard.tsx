@@ -109,7 +109,7 @@ export function ImportProgressCard({ progress, onCancel }: ImportProgressCardPro
       </div>
 
       <div className={styles.actions}>
-        <Button variant="secondary" onClick={onCancel} disabled={finalizing}>
+        <Button variant="secondary" onClick={onCancel}>
           Отменить
         </Button>
       </div>

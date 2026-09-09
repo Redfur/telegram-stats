@@ -169,6 +169,7 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
     source_file_size: Option<i64>,
     ctx: &mut ImportContext<'_, F>,
 ) -> Result<ChatSummary, ImportError> {
+    let started = std::time::Instant::now();
     let imported_at = now_unixtime();
     let tx = conn.transaction().map_err(db_err)?;
 
@@ -441,6 +442,12 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
         message_count,
         people_count: people_cache.len() as i64,
     });
+    log::info!(
+        "импорт «{source_filename}»: чтение файла завершено — {message_count} сообщений, \
+         {} участников, {:.1?}",
+        people_cache.len(),
+        started.elapsed()
+    );
 
     {
         let mut insert_alias = tx
@@ -519,6 +526,10 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
             .map_err(db_err)?;
 
         for ev in &pending_services {
+            if ctx.cancel.load(Ordering::Relaxed) {
+                log::info!("импорт «{source_filename}»: отменено на разборе сервисных событий");
+                return Err(ImportError::Cancelled);
+            }
             let Some(ts) = ev.ts else {
                 continue; // без даты класть на таймлайн нечего
             };
@@ -639,6 +650,11 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
             }
         }
     }
+    log::debug!(
+        "импорт «{source_filename}»: сервисные события разобраны ({} шт.), {:.1?}",
+        pending_services.len(),
+        started.elapsed()
+    );
 
     if let Some(tg_chat_id) = meta.tg_chat_id {
         let existing: Option<i64> = tx
@@ -693,8 +709,19 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                 let collected: rusqlite::Result<Vec<_>> = rows.collect();
                 collected.map_err(db_err)?
             };
+            log::info!(
+                "импорт «{source_filename}»: реимпорт чата id={old_id} — сверка {} участников",
+                new_people.len()
+            );
+            let reconcile_started = std::time::Instant::now();
 
             for (new_person_id, tg_person_id, display_name) in new_people {
+                if ctx.cancel.load(Ordering::Relaxed) {
+                    log::info!(
+                        "импорт «{source_filename}»: отменено на сверке участников (id={old_id})"
+                    );
+                    return Err(ImportError::Cancelled);
+                }
                 let matched_old: Option<i64> = tx
                     .query_row(
                         "SELECT id FROM people WHERE chat_id = ?1 AND tg_person_id = ?2",
@@ -758,6 +785,10 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
                     .map_err(db_err)?;
                 }
             }
+            log::debug!(
+                "импорт «{source_filename}»: сверка участников (id={old_id}) готова, {:.1?}",
+                reconcile_started.elapsed()
+            );
 
             tx.execute(
                 "UPDATE messages SET chat_id = ?1 WHERE chat_id = ?2",
@@ -829,11 +860,47 @@ pub fn import_into_db<F: FnMut(ImportProgress)>(
     )
     .map_err(db_err)?;
 
+    // Отмена проверяется между тремя пересчётами, а не только до них —
+    // они идут одним блоком без цикла в этой функции, дальше проверять
+    // уже негде, кроме как внутри самого запроса (не делаем, см. план).
+    let precompute_started = std::time::Instant::now();
+    if ctx.cancel.load(Ordering::Relaxed) {
+        log::info!("импорт «{source_filename}»: отменено перед пересчётом метрик дашборда");
+        return Err(ImportError::Cancelled);
+    }
     crate::metrics::recompute_dashboard_metrics(&tx, chat_id).map_err(db_err)?;
+    log::debug!(
+        "импорт «{source_filename}»: recompute_dashboard_metrics — {:.1?}",
+        precompute_started.elapsed()
+    );
+
+    if ctx.cancel.load(Ordering::Relaxed) {
+        log::info!("импорт «{source_filename}»: отменено перед пересчётом типов сообщений");
+        return Err(ImportError::Cancelled);
+    }
+    let step_started = std::time::Instant::now();
     crate::metrics::recompute_message_type_metrics(&tx, chat_id).map_err(db_err)?;
+    log::debug!(
+        "импорт «{source_filename}»: recompute_message_type_metrics — {:.1?}",
+        step_started.elapsed()
+    );
+
+    if ctx.cancel.load(Ordering::Relaxed) {
+        log::info!("импорт «{source_filename}»: отменено перед пересчётом реакций");
+        return Err(ImportError::Cancelled);
+    }
+    let step_started = std::time::Instant::now();
     crate::metrics::recompute_reaction_metrics(&tx, chat_id).map_err(db_err)?;
+    log::debug!(
+        "импорт «{source_filename}»: recompute_reaction_metrics — {:.1?}",
+        step_started.elapsed()
+    );
 
     tx.commit().map_err(db_err)?;
+    log::info!(
+        "импорт «{source_filename}»: коммит готов, всего {:.1?}",
+        started.elapsed()
+    );
 
     Ok(ChatSummary {
         id: chat_id,
