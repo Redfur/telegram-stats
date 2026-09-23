@@ -108,12 +108,52 @@ pub fn recompute_dashboard_metrics(conn: &Connection, chat_id: i64) -> rusqlite:
     })
 }
 
+/// Анонимные действия админа в супергруппе (`edit_group_title`,
+/// `edit_group_photo`, иногда `create_group`) Telegram помечает actor'ом,
+/// чей `actor_id` совпадает с id самой супергруппы — `db/import.rs`
+/// резолвит его через `resolve_person` не отличая от настоящего
+/// участника, и заводит для него строку `people` без единого сообщения
+/// (единственный путь создания `people` без парной строки `messages`).
+/// Точный формат префикса (`channel<id>` по документации
+/// core.telegram.org/import-export) не проверен на реальном экспорте —
+/// поэтому пробуем все документированные варианты типа сущности, а не
+/// один. `NOT EXISTS` — на случай, если Telegram когда-нибудь
+/// переиспользует это число под настоящий аккаунт: тогда строка не
+/// фантомная, трогать её нельзя.
+pub fn remove_phantom_group_person(conn: &Connection, chat_id: i64) -> rusqlite::Result<()> {
+    let tg_chat_id: Option<i64> = conn
+        .query_row(
+            "SELECT tg_chat_id FROM chats WHERE id = ?1",
+            params![chat_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    let Some(tg_chat_id) = tg_chat_id else {
+        return Ok(());
+    };
+    for prefix in ["channel", "chat", "group"] {
+        conn.execute(
+            "DELETE FROM people WHERE chat_id = ?1 AND tg_person_id = ?2 \
+             AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.person_id = people.id)",
+            params![chat_id, format!("{prefix}{tg_chat_id}")],
+        )?;
+    }
+    Ok(())
+}
+
 /// Ленивый self-heal: чат мог пройти импорт до появления этого среза
 /// (`dashboard_ready` тогда 0 по умолчанию из миграции) — досчитываем один
 /// раз при первом открытии, а не требуем переимпорт. Несуществующий
 /// `chat_id` — не ошибка, просто ничего не делает; вызывающий запрос сам
 /// корректно вернёт `None`/пусто.
+///
+/// `remove_phantom_group_person` вызывается здесь безусловно (не только
+/// при `dashboard_ready = 0`) — сам по себе дешёвый точечный `DELETE`,
+/// идемпотентный, чинит и уже импортированные до этого фикса чаты при
+/// первом же открытии, не только новые импорты.
 pub fn ensure_dashboard_ready(conn: &Connection, chat_id: i64) -> rusqlite::Result<()> {
+    remove_phantom_group_person(conn, chat_id)?;
     let ready: Option<i64> = conn
         .query_row(
             "SELECT dashboard_ready FROM chats WHERE id = ?1",

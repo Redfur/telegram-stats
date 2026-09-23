@@ -525,6 +525,55 @@ fn aliases_accumulate_distinct_display_names_for_the_same_person() {
 }
 
 #[test]
+fn anonymous_supergroup_actor_does_not_become_a_phantom_participant() {
+    // Анонимное действие админа (docs/SPEC.md §8.9 — канал/группа сама
+    // встречается как участник) Telegram помечает actor_id, равным id
+    // самой супергруппы ("channel555" == корневой "id": 555 этого же
+    // документа) — не должно завести строку people без единого
+    // сообщения. Второй сервисный actor ("user777", настоящий отдельный
+    // id) с нулём сообщений — легитимный случай, должен остаться в
+    // people как есть: гвард обязан бить точечно по id чата, а не по
+    // любому нулевому actor.
+    let mut conn = fresh_db();
+    let bytes_read = AtomicU64::new(0);
+    let cancel = AtomicBool::new(false);
+    let mut ctx = ImportContext {
+        bytes_read: &bytes_read,
+        on_progress: |_| {},
+        cancel: &cancel,
+    };
+
+    let export = br#"{
+        "name": "Dacha 2024", "type": "private_supergroup", "id": 555,
+        "messages": [
+            {"type": "message", "id": 1, "date_unixtime": "1000", "from": "Nastya", "from_id": "user1", "text": "hi"},
+            {"type": "service", "id": 2, "date_unixtime": "2000", "actor": "Dacha 2024", "actor_id": "channel555", "action": "edit_group_title", "title": "Dacha 2024"},
+            {"type": "service", "id": 3, "date_unixtime": "3000", "actor": "Real Admin", "actor_id": "user777", "action": "invite_members", "members": ["Nastya"]}
+        ]
+    }"#;
+    let chat = import_into_db(
+        &mut conn,
+        std::io::Cursor::new(export.to_vec()),
+        "anon_actor.json",
+        None,
+        &mut ctx,
+    )
+    .expect("import should succeed");
+
+    let people = people_ordered_by_name(&conn, chat.id);
+    let names: Vec<Option<String>> = people.iter().map(|p| p.display_name.clone()).collect();
+    assert!(
+        !names.contains(&Some("Dacha 2024".to_string())),
+        "the chat's own name must not appear as a participant, got: {names:?}"
+    );
+    assert!(
+        names.contains(&Some("Real Admin".to_string())),
+        "a genuine zero-message service actor must still appear, got: {names:?}"
+    );
+    assert_eq!(people.len(), 2);
+}
+
+#[test]
 fn message_type_overview_counts_every_kind_in_english_chat() {
     let mut conn = fresh_db();
     let chat = import(&mut conn, "english_chat.json");
