@@ -8,8 +8,9 @@ use telegram_stats_lib::import::{parse_export, ImportError, ParsedEvent};
 use telegram_stats_lib::metrics::{
     get_activity_series, get_chat_totals, get_message_type_detail, get_message_type_overview,
     get_participant_timeline, get_reaction_person_breakdown, get_reactions_overview,
-    get_top_participants, get_top_reacted_messages, granularity::pick_granularity, MessageTypeKind,
-    MessageTypeSummaryStats, ReactionsOverview, TimelineOverview, TypeTimeView,
+    get_title_history, get_top_participants, get_top_reacted_messages,
+    granularity::pick_granularity, MessageTypeKind, MessageTypeSummaryStats, ReactionsOverview,
+    TimelineOverview, TypeTimeView,
 };
 
 fn people_ordered_by_name(conn: &Connection, chat_id: i64) -> Vec<db::PersonRow> {
@@ -1750,6 +1751,115 @@ fn group_50_members_populates_membership_and_chat_events() {
         vec!["created", "photo_changed", "migrated"],
         "pin_message is not a timeline-relevant action, must not appear here"
     );
+}
+
+fn import_title_history_doc(conn: &mut Connection, export: &[u8], name: &str) -> db::ChatSummary {
+    let bytes_read = AtomicU64::new(0);
+    let cancel = AtomicBool::new(false);
+    let mut ctx = ImportContext {
+        bytes_read: &bytes_read,
+        on_progress: |_| {},
+        cancel: &cancel,
+    };
+    import_into_db(
+        conn,
+        std::io::Cursor::new(export.to_vec()),
+        name,
+        None,
+        &mut ctx,
+    )
+    .expect("import should succeed")
+}
+
+#[test]
+fn title_history_builds_segments_from_created_and_title_changed_events() {
+    let mut conn = fresh_db();
+    let export = br#"{
+        "name": "New Name", "type": "private_supergroup", "id": 1,
+        "messages": [
+            {"type": "service", "id": 1, "date_unixtime": "1000", "actor": "Founder", "actor_id": "user1", "action": "create_group", "title": "Old Name"},
+            {"type": "message", "id": 2, "date_unixtime": "1500", "from": "Founder", "from_id": "user1", "text": "hi"},
+            {"type": "service", "id": 3, "date_unixtime": "2000", "actor": "Alice", "actor_id": "user2", "action": "edit_group_title", "title": "Middle Name"},
+            {"type": "service", "id": 4, "date_unixtime": "3000", "actor": "Bob", "actor_id": "user3", "action": "edit_group_title", "title": "New Name"}
+        ]
+    }"#;
+    let chat = import_title_history_doc(&mut conn, export, "title_history.json");
+
+    let history = get_title_history(&conn, chat.id)
+        .unwrap()
+        .expect("chat with title_changed events must report Some");
+    let names: Vec<Option<String>> = history.segments.iter().map(|s| s.name.clone()).collect();
+    assert_eq!(
+        names,
+        vec![
+            Some("Old Name".to_string()),
+            Some("Middle Name".to_string()),
+            Some("New Name".to_string()),
+        ]
+    );
+    assert_eq!(history.segments[0].start_ts, 1000);
+    assert_eq!(history.segments[0].end_ts, Some(2000));
+    assert_eq!(
+        history.segments[0].author_display_name,
+        Some("Founder".to_string())
+    );
+    assert_eq!(history.segments[1].start_ts, 2000);
+    assert_eq!(history.segments[1].end_ts, Some(3000));
+    assert_eq!(
+        history.segments[1].author_display_name,
+        Some("Alice".to_string())
+    );
+    assert_eq!(history.segments[2].start_ts, 3000);
+    assert_eq!(
+        history.segments[2].end_ts, None,
+        "the last segment stays open"
+    );
+    assert_eq!(
+        history.segments[2].author_display_name,
+        Some("Bob".to_string())
+    );
+}
+
+#[test]
+fn title_history_is_none_when_the_chat_was_never_renamed() {
+    let mut conn = fresh_db();
+    let export = br#"{
+        "name": "Only Name", "type": "private_supergroup", "id": 1,
+        "messages": [
+            {"type": "service", "id": 1, "date_unixtime": "1000", "actor": "Founder", "actor_id": "user1", "action": "create_group", "title": "Only Name"},
+            {"type": "message", "id": 2, "date_unixtime": "1500", "from": "Founder", "from_id": "user1", "text": "hi"}
+        ]
+    }"#;
+    let chat = import_title_history_doc(&mut conn, export, "no_rename.json");
+
+    assert!(
+        get_title_history(&conn, chat.id).unwrap().is_none(),
+        "a chat renamed zero times has nothing to show"
+    );
+}
+
+#[test]
+fn title_history_marks_the_leading_segment_unknown_without_a_created_event() {
+    // История экспорта начинается не с основания чата (старая группа,
+    // либо create_group не попал в видимый диапазон) — первый сегмент
+    // не должен выдумывать название или дату.
+    let mut conn = fresh_db();
+    let export = br#"{
+        "name": "New Name", "type": "private_supergroup", "id": 1,
+        "messages": [
+            {"type": "message", "id": 1, "date_unixtime": "500", "from": "Founder", "from_id": "user1", "text": "hi"},
+            {"type": "service", "id": 2, "date_unixtime": "2000", "actor": "Alice", "actor_id": "user2", "action": "edit_group_title", "title": "New Name"}
+        ]
+    }"#;
+    let chat = import_title_history_doc(&mut conn, export, "no_created.json");
+
+    let history = get_title_history(&conn, chat.id).unwrap().unwrap();
+    assert_eq!(history.segments.len(), 2);
+    assert_eq!(history.segments[0].name, None);
+    assert_eq!(history.segments[0].start_ts, 500, "starts at first_msg_ts");
+    assert_eq!(history.segments[0].end_ts, Some(2000));
+    assert_eq!(history.segments[0].author_display_name, None);
+    assert_eq!(history.segments[1].name, Some("New Name".to_string()));
 }
 
 #[test]

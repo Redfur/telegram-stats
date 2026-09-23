@@ -12,7 +12,7 @@ use db::{ChatSummary, CountingReader, Db, ImportContext, ImportPhase, ImportProg
 use import::ImportError;
 use metrics::{
     ActivitySeries, ChatTotals, MessageTypeDetail, MessageTypeKind, MessageTypeOverview,
-    PersonReactionBreakdown, ReactionsOverview, TimelineOverview, TopParticipants,
+    PersonReactionBreakdown, ReactionsOverview, TimelineOverview, TitleHistory, TopParticipants,
     TopReactedMessage, TypeTimeView,
 };
 
@@ -286,6 +286,15 @@ fn get_participant_timeline(
         .map_err(|e| cmd_err("get_participant_timeline", e))
 }
 
+#[tauri::command]
+fn get_title_history(
+    db: tauri::State<'_, Db>,
+    chat_id: i64,
+) -> Result<Option<TitleHistory>, String> {
+    let conn = db.0.get().map_err(|e| cmd_err("get_title_history", e))?;
+    metrics::get_title_history(&conn, chat_id).map_err(|e| cmd_err("get_title_history", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Паника без этого хука видна только в stdout/stderr — у собранного
@@ -351,6 +360,7 @@ pub fn run() {
             get_top_reacted_messages,
             get_reaction_person_breakdown,
             get_participant_timeline,
+            get_title_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

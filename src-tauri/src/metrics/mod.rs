@@ -4,6 +4,7 @@ pub mod precompute;
 mod queries;
 mod reactions;
 mod timeline;
+mod title_history;
 
 pub use granularity::Granularity;
 pub use message_types::{
@@ -27,3 +28,4 @@ pub use timeline::{
     get_participant_timeline, CompositionPoint, GroupEventRow, PersonEvent, PersonTimelineRow,
     Segment, TimelineOverview, TimelineSummary,
 };
+pub use title_history::{get_title_history, TitleHistory, TitleHistorySegment};
