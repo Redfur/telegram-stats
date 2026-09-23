@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Tag } from "../ui";
 import { formatPeriod } from "../../lib/formatPeriod";
+import { formatChatType } from "../../lib/formatChatType";
 import { formatShortDate } from "../../lib/formatMessageTimestamp";
 import { formatDurationDays } from "../../lib/formatDuration";
 import type { ChatTotals, TitleHistory } from "../../lib/types";
@@ -36,15 +37,20 @@ function tooltipTransform(leftPct: number): string {
 }
 
 // Шапка страницы дашборда (макет «Дашборд», ход t11/вариант 11a) —
-// название чата, период/сообщения/участники, и, если чат хоть раз
-// переименовывался, полоса истории названий под ней: ширина сегмента
-// пропорциональна сроку действия названия (flexGrow вместо ручного
-// расчёта % через left/width — сумма долей сама даёт 100% без отдельной
-// арифметики), тултип на hover — имя, период, срок, кто переименовал.
-// Полоса просто не рендерится, если название ни разу не менялось или
-// история недоступна (чат импортирован до миграции таймлайна) —
-// вырожденная метрика скрывается целиком, без поясняющей карточки
-// (docs/SPEC.md §7), backend не различает эти два случая специально.
+// тип чата, период и название; сообщения/участники сознательно не
+// дублируются здесь — та же сводка секцией ниже (00 СВОДКА). Если чат
+// хоть раз переименовывался, под названием — полоса истории названий:
+// ширина сегмента пропорциональна сроку действия названия (flexGrow
+// вместо ручного расчёта % через left/width — сумма долей сама даёт
+// 100% без отдельной арифметики), тултип на hover — имя, период, срок,
+// кто переименовал. Полоса просто не рендерится, если название ни разу
+// не менялось или история недоступна (чат импортирован до миграции
+// таймлайна) — вырожденная метрика скрывается целиком, без поясняющей
+// карточки (docs/SPEC.md §7), backend не различает эти два случая
+// специально. Первый сегмент без `created`-события в источнике честно
+// помечен «название неизвестно» — тултип поясняет причину отдельной
+// строкой, не просто заглушка (реальный случай: экспорт не содержит
+// истории с основания чата).
 export function DashboardMasthead({ chatId, chatName, chatType, totals }: DashboardMastheadProps) {
   const [history, setHistory] = useState<TitleHistory | null>(null);
   const [tooltip, setTooltip] = useState<SegmentTooltip | null>(null);
@@ -91,14 +97,8 @@ export function DashboardMasthead({ chatId, chatName, chatType, totals }: Dashbo
   return (
     <header className={styles.masthead}>
       <div className={styles.head}>
-        <Tag variant="outline">{chatType}</Tag>
+        <Tag variant="outline">{formatChatType(chatType)}</Tag>
         {period && <span className={styles.period}>{period}</span>}
-        {totals && (
-          <span className={styles.counts}>
-            {totals.message_count.toLocaleString("ru-RU")} сообщений ·{" "}
-            {totals.participant_count.toLocaleString("ru-RU")} участников
-          </span>
-        )}
       </div>
       <h1 className={styles.title}>{chatName || "Без названия"}</h1>
 
@@ -141,6 +141,9 @@ export function DashboardMasthead({ chatId, chatName, chatType, totals }: Dashbo
                   </div>
                   {seg.author_display_name && (
                     <div className={styles.tooltipMeta}>переименовал(а) {seg.author_display_name}</div>
+                  )}
+                  {seg.name == null && (
+                    <div className={styles.tooltipMeta}>экспорт не содержит истории до этого момента</div>
                   )}
                 </div>
               );

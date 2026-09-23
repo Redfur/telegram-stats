@@ -12,8 +12,7 @@
   gap: var(--sp-5);
 }
 
-.period,
-.counts {
+.period {
   font-size: 12px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;

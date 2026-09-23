@@ -1,6 +1,7 @@
 import { Button, Card, Tag, ConfirmDialog } from "../ui";
 import type { ChatSummary } from "../../lib/types";
 import { formatPeriod } from "../../lib/formatPeriod";
+import { formatChatType } from "../../lib/formatChatType";
 import styles from "./LibraryCard.module.css";
 
 const UPDATED_AT = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" });
@@ -22,7 +23,7 @@ export function LibraryCard({ chat, onOpen, onReimport, onDelete }: LibraryCardP
   return (
     <Card className={styles.card}>
       <div className={styles.head}>
-        <Tag variant={chat.participant_count > 2 ? "accent" : "neutral"}>{chat.chat_type}</Tag>
+        <Tag variant={chat.participant_count > 2 ? "accent" : "neutral"}>{formatChatType(chat.chat_type)}</Tag>
         <span className={styles.updated}>обновлён {UPDATED_AT.format(new Date(chat.imported_at * 1000))}</span>
       </div>
       <div className={styles.title}>{chat.name || "Без названия"}</div>
