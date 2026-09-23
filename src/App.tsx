@@ -26,7 +26,13 @@ function DashboardRoute({ chats, onReimport }: { chats: ChatSummary[]; onReimpor
   const chat = chats.find((c) => c.id === id);
   if (!chat) return <Navigate to="/" replace />;
   return (
-    <Dashboard chatId={id} chatType={chat.chat_type} tgChatId={chat.tg_chat_id} onReimport={onReimport} />
+    <Dashboard
+      chatId={id}
+      chatName={chat.name}
+      chatType={chat.chat_type}
+      tgChatId={chat.tg_chat_id}
+      onReimport={onReimport}
+    />
   );
 }
 

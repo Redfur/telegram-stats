@@ -283,3 +283,18 @@ export interface PersonRow {
   last_msg_ts: number | null;
   is_hidden: boolean;
 }
+
+// Зеркалит src-tauri/src/metrics/title_history.rs — полоса истории
+// названий в шапке дашборда.
+export interface TitleHistorySegment {
+  /** null — период до первого известного события, начало не восстановимо. */
+  name: string | null;
+  start_ts: number;
+  /** null — текущий сегмент, действует по сей день. */
+  end_ts: number | null;
+  author_display_name: string | null;
+}
+
+export interface TitleHistory {
+  segments: TitleHistorySegment[];
+}

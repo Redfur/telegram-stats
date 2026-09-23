@@ -7,11 +7,13 @@ import { ParticipantsTable } from "../../components/ParticipantsTable/Participan
 import { MessageTypesBlock } from "../../components/MessageTypesBlock/MessageTypesBlock";
 import { ReactionsBlock } from "../../components/ReactionsBlock/ReactionsBlock";
 import { TimelineBlock } from "../../components/TimelineBlock/TimelineBlock";
+import { DashboardMasthead } from "../../components/DashboardMasthead/DashboardMasthead";
 import type { ActivitySeries, ChatTotals, TopParticipants } from "../../lib/types";
 import styles from "./Dashboard.module.css";
 
 interface DashboardProps {
   chatId: number;
+  chatName: string | null;
   chatType: string;
   tgChatId: number | null;
   onReimport: () => void;
@@ -23,12 +25,13 @@ interface DashboardProps {
 // типичного интервала между кликами при скролле по списку).
 const SWITCH_DEBOUNCE_MS = 150;
 
-// Разделы 00/01/02/03 макета «Дашборд» (вариант 2a: 00 сводка, 01
-// активность, 02 кто писал) + ход t6 (03 типы сообщений) + 04 реакции
-// (docs/SPEC.md §9 «Социальная динамика», первый срез) + ход t10/10a (05
-// таймлайн участников) — остальные секции макета (хронология слов,
-// рекорды) — следующий инкремент (docs/PLAN.md).
-export function Dashboard({ chatId, chatType, tgChatId, onReimport }: DashboardProps) {
+// Шапка (ход t11/11a — название, период/сообщения/участники, история
+// названий) + разделы 00/01/02/03 макета «Дашборд» (вариант 2a: 00
+// сводка, 01 активность, 02 кто писал) + ход t6 (03 типы сообщений) + 04
+// реакции (docs/SPEC.md §9 «Социальная динамика», первый срез) + ход
+// t10/10a (05 таймлайн участников) — остальные секции макета (хронология
+// слов, рекорды) — следующий инкремент (docs/PLAN.md).
+export function Dashboard({ chatId, chatName, chatType, tgChatId, onReimport }: DashboardProps) {
   const [totals, setTotals] = useState<ChatTotals | null>(null);
   const [activity, setActivity] = useState<ActivitySeries | null>(null);
   const [participants, setParticipants] = useState<TopParticipants | null>(null);
@@ -63,6 +66,8 @@ export function Dashboard({ chatId, chatType, tgChatId, onReimport }: DashboardP
 
   return (
     <div className={styles.wrap}>
+      <DashboardMasthead chatId={chatId} chatName={chatName} chatType={chatType} totals={totals} />
+
       <section>
         <div className={styles.sectionHead}>
           <span className="kick">00</span>

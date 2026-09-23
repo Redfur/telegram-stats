@@ -1,0 +1,87 @@
+.masthead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-6);
+  border-bottom: var(--border-w) solid var(--border-soft);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-5);
+}
+
+.period,
+.counts {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.title {
+  margin: 0;
+  font: 600 38px/1.1 var(--font-head), sans-serif;
+  letter-spacing: 0;
+}
+
+/* Полоса истории названий — ширина сегмента пропорциональна сроку
+   действия названия (flexGrow из компонента). Двухтональное чередование
+   через nth-child — единственный способ отличить границу соседних
+   сегментов без вычисляемого per-segment цвета (тут цвет не несёт
+   идентичность, имя раскрывается только в тултипе). */
+.segments {
+  position: relative;
+  display: flex;
+  height: 22px;
+  margin-top: var(--sp-3);
+}
+
+.segment {
+  flex-grow: 1;
+  flex-basis: 0;
+  min-width: 3px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-3);
+  overflow: hidden;
+  background: var(--accent-weak);
+  border-right: var(--border-w) solid var(--ground);
+  cursor: default;
+}
+.segment:nth-child(even) {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.segmentLabel {
+  font: 600 12px/1 var(--font-head), sans-serif;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tooltip {
+  position: absolute;
+  top: 28px;
+  z-index: 6;
+  min-width: 200px;
+  background: var(--surface-raised);
+  border: var(--border-w) solid var(--accent);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  padding: var(--sp-3) var(--sp-4);
+  cursor: default;
+}
+
+.tooltipName {
+  font: 600 15px/1.2 var(--font-head), sans-serif;
+  color: var(--text);
+}
+
+.tooltipMeta {
+  margin-top: var(--sp-1);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
